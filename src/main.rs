@@ -40,6 +40,12 @@ struct Arguments {
     /// 0: include all reads
     #[clap(short = 'L', long, default_value = "1")]
     min_read_len: u32,
+
+    /// Skip technical reads
+    ///
+    /// Default: include all reads
+    #[clap(short = 't', long)]
+    skip_technical: bool,
 }
 impl Arguments {
     pub fn threads(&self) -> usize {
@@ -64,6 +70,7 @@ fn main() -> Result<()> {
         first_row_id,
         row_count,
         args.min_read_len,
+        args.skip_technical,
     )?;
 
     Ok(())
@@ -137,6 +144,7 @@ fn launch_threads(
     first_row_id: i64,
     row_count: u64,
     min_read_len: u32,
+    skip_technical: bool,
 ) -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
@@ -158,7 +166,8 @@ fn launch_threads(
             start + chunk_size as i64
         };
         handles.push(thread::spawn(move || {
-            if let Err(e) = thread_work(&sra_file, start, end, writer, min_read_len) {
+            if let Err(e) = thread_work(&sra_file, start, end, writer, min_read_len, skip_technical)
+            {
                 eprintln!("Thread error: {}", e);
             }
         }));
@@ -181,6 +190,7 @@ fn thread_work(
     end_row: i64,
     writer: Arc<Mutex<io::BufWriter<io::Stdout>>>,
     min_read_len: u32,
+    skip_technical: bool,
 ) -> Result<()> {
     let dir = match SafeKDirectory::new() {
         Ok(dir) => dir,
@@ -220,7 +230,15 @@ fn thread_work(
         }
     }
 
-    process_range(&cursor, &indices, start_row, end_row, &writer, min_read_len)
+    process_range(
+        &cursor,
+        &indices,
+        start_row,
+        end_row,
+        &writer,
+        min_read_len,
+        skip_technical,
+    )
 }
 
 fn add_columns(table: &SafeVTable, cursor: &SafeVCursor) -> Result<ColumnIndices> {
@@ -311,6 +329,7 @@ fn process_range(
     end_row: i64,
     writer: &Arc<Mutex<io::BufWriter<io::Stdout>>>,
     min_read_len: u32,
+    skip_technical: bool,
 ) -> Result<()> {
     let mut local_buffer = Vec::with_capacity(LOCAL_BUFFER_SIZE);
     for row_id in start_row..end_row {
@@ -318,7 +337,7 @@ fn process_range(
         let mut num_reads = 0;
 
         // Get sequence data
-        let (seq, qual, read_starts, read_lens) = unsafe {
+        let (seq, qual, read_starts, read_lens, read_types) = unsafe {
             let mut seq_data = std::ptr::null();
             let rc = VCursorCellDataDirect(
                 cursor.as_ptr(),
@@ -375,18 +394,38 @@ fn process_range(
                 bail!("Failed to get read length data for row {}: {}", row_id, rc);
             }
 
+            let mut read_type_data = std::ptr::null();
+            let rc = VCursorCellDataDirect(
+                cursor.as_ptr(),
+                row_id,
+                indices.read_type,
+                std::ptr::null_mut(),
+                &mut read_type_data as *mut *const _ as *mut *const std::ffi::c_void,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if rc != 0 {
+                bail!("Failed to get read type data for row {}: {}", row_id, rc);
+            }
+
             let seq_slice = std::slice::from_raw_parts(seq_data as *const u8, row_len as usize);
             let qual_slice = std::slice::from_raw_parts(qual_data as *const u8, row_len as usize);
             let read_starts =
                 std::slice::from_raw_parts(read_start_data as *const u32, num_reads as usize);
             let read_lens =
                 std::slice::from_raw_parts(read_len_data as *const u32, num_reads as usize);
+            let read_types =
+                std::slice::from_raw_parts(read_type_data as *const u8, num_reads as usize);
 
-            (seq_slice, qual_slice, read_starts, read_lens)
+            (seq_slice, qual_slice, read_starts, read_lens, read_types)
         };
 
         // Prepare local buffer to minimize lock contention
         for (i, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
+            if skip_technical && read_types[i] == 0 {
+                continue;
+            }
+
             if len < min_read_len {
                 continue;
             }
