@@ -35,6 +35,11 @@ struct Arguments {
     /// 0: use all available cores
     #[clap(short = 'T', long, default_value = "0")]
     threads: usize,
+
+    /// Minimum read length to include
+    /// 0: include all reads
+    #[clap(short = 'L', long, default_value = "1")]
+    min_read_len: u32,
 }
 impl Arguments {
     pub fn threads(&self) -> usize {
@@ -53,7 +58,13 @@ fn main() -> Result<()> {
     let (first_row_id, row_count) = get_num_spots(&args.sra_file)?;
 
     // Launch threads
-    launch_threads(&args.sra_file, args.threads(), first_row_id, row_count)?;
+    launch_threads(
+        &args.sra_file,
+        args.threads(),
+        first_row_id,
+        row_count,
+        args.min_read_len,
+    )?;
 
     Ok(())
 }
@@ -125,6 +136,7 @@ fn launch_threads(
     num_threads: usize,
     first_row_id: i64,
     row_count: u64,
+    min_read_len: u32,
 ) -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
@@ -146,7 +158,7 @@ fn launch_threads(
             start + chunk_size as i64
         };
         handles.push(thread::spawn(move || {
-            if let Err(e) = thread_work(&sra_file, start, end, writer) {
+            if let Err(e) = thread_work(&sra_file, start, end, writer, min_read_len) {
                 eprintln!("Thread error: {}", e);
             }
         }));
@@ -168,6 +180,7 @@ fn thread_work(
     start_row: i64,
     end_row: i64,
     writer: Arc<Mutex<io::BufWriter<io::Stdout>>>,
+    min_read_len: u32,
 ) -> Result<()> {
     let dir = match SafeKDirectory::new() {
         Ok(dir) => dir,
@@ -207,7 +220,7 @@ fn thread_work(
         }
     }
 
-    process_range(&cursor, &indices, start_row, end_row, &writer)
+    process_range(&cursor, &indices, start_row, end_row, &writer, min_read_len)
 }
 
 fn add_columns(table: &SafeVTable, cursor: &SafeVCursor) -> Result<ColumnIndices> {
@@ -297,6 +310,7 @@ fn process_range(
     start_row: i64,
     end_row: i64,
     writer: &Arc<Mutex<io::BufWriter<io::Stdout>>>,
+    min_read_len: u32,
 ) -> Result<()> {
     let mut local_buffer = Vec::with_capacity(LOCAL_BUFFER_SIZE);
     for row_id in start_row..end_row {
@@ -373,7 +387,7 @@ fn process_range(
 
         // Prepare local buffer to minimize lock contention
         for (i, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
-            if len == 0 {
+            if len < min_read_len {
                 continue;
             }
             let end = start as usize + len as usize;
