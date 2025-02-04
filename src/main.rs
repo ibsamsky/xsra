@@ -101,7 +101,6 @@ fn main() -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
     let remainder = total_rows % num_threads;
-    // eprintln!("Inititalizing {} threads", num_threads);
 
     // Shared writer for output
     let writer = io::BufWriter::with_capacity(BUFFER_SIZE, io::stdout());
@@ -118,15 +117,6 @@ fn main() -> Result<()> {
         } else {
             start + chunk_size as i64
         };
-
-        // eprintln!(
-        //     "Thread {} record range: {} - {} : {} total",
-        //     i,
-        //     start,
-        //     end,
-        //     end - start
-        // );
-
         handles.push(thread::spawn(move || {
             if let Err(e) = thread_work(&sra_file, start, end, writer) {
                 eprintln!("Thread error: {}", e);
