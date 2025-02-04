@@ -1,0 +1,11 @@
+[package]
+name = "sra-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+libc = "0.2.169"
+
+[build-dependencies]
+pkg-config = "0.3.31"
