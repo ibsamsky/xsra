@@ -1,10 +1,10 @@
-use std::env;
 use std::ffi::CString;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::thread;
 
 use anyhow::{bail, Result};
+use clap::Parser;
 use parking_lot::Mutex;
 
 use sra_rs::{
@@ -25,13 +25,20 @@ struct ColumnIndices {
     read_type: u32,
 }
 
+#[derive(Debug, Parser)]
+struct Arguments {
+    /// Path to the SRA file or directory
+    #[clap(name = "SRA file", required = true)]
+    sra_file: String,
+
+    /// Number of threads to use
+    /// 0: use all available cores
+    #[clap(short = 'T', long, default_value = "0")]
+    threads: usize,
+}
+
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: {} <SRA file>", args[0]);
-        return Ok(());
-    }
-    let sra_file = args[1].clone();
+    let args = Arguments::parse();
 
     // Initialize VDB components in main thread to determine row count
     let dir = match SafeKDirectory::new() {
@@ -51,7 +58,7 @@ fn main() -> Result<()> {
         SafeVSchema(schema_ptr)
     };
 
-    let table = open_table(&mgr, &schema, &sra_file)?;
+    let table = open_table(&mgr, &schema, &args.sra_file)?;
 
     // Create temporary cursor to get row range
     let (first_row_id, row_count) = {
@@ -97,7 +104,11 @@ fn main() -> Result<()> {
     };
 
     // Determine number of threads and split work
-    let num_threads = num_cpus::get();
+    let num_threads = if args.threads == 0 {
+        num_cpus::get()
+    } else {
+        args.threads.min(num_cpus::get())
+    };
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
     let remainder = total_rows % num_threads;
@@ -109,7 +120,7 @@ fn main() -> Result<()> {
     let mut handles = vec![];
 
     for i in 0..num_threads {
-        let sra_file = sra_file.clone();
+        let sra_file = args.sra_file.clone();
         let writer = Arc::clone(&shared_writer);
         let start = first_row_id + (i * chunk_size) as i64;
         let end = if i == num_threads - 1 {
