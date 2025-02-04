@@ -4,9 +4,37 @@ use std::path::PathBuf;
 fn find_vdb_lib() -> Option<PathBuf> {
     // Check environment variable first
     if let Ok(path) = env::var("NCBI_VDB_PATH") {
-        let lib_path = PathBuf::from(path).join("lib");
-        if lib_path.exists() {
+        // First try with /lib subdirectory
+        let lib_path = PathBuf::from(&path).join("lib");
+        if lib_path.join("libncbi-vdb.so").exists() {
             return Some(lib_path);
+        }
+
+        // Then try with /lib64 subdirectory
+        let lib64_path = PathBuf::from(&path).join("lib64");
+        if lib64_path.join("libncbi-vdb.so").exists() {
+            return Some(lib64_path);
+        }
+
+        // Finally try the path directly
+        let direct_path = PathBuf::from(&path);
+        if direct_path.join("libncbi-vdb.so").exists() {
+            return Some(direct_path);
+        }
+
+        // Check for versioned libraries
+        for check_path in [lib_path, lib64_path, direct_path] {
+            if let Ok(entries) = std::fs::read_dir(&check_path) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let file_name = entry.file_name();
+                        let file_name = file_name.to_string_lossy();
+                        if file_name.starts_with("libncbi-vdb.so.") {
+                            return Some(check_path);
+                        }
+                    }
+                }
+            }
         }
     }
 
