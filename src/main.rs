@@ -7,6 +7,10 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use parking_lot::Mutex;
 
+mod cli;
+
+use cli::Arguments;
+
 use sra_rs::{
     is_column_present, SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, SafeVTable,
     VCursorAddColumn, VCursorCellDataDirect, VCursorIdRange, VCursorOpen, VDBManagerMakeSchema,
@@ -23,38 +27,6 @@ struct ColumnIndices {
     read_start: u32,
     read_len: u32,
     read_type: u32,
-}
-
-#[derive(Debug, Parser)]
-struct Arguments {
-    /// Path to the SRA file or directory
-    #[clap(name = "SRA file", required = true)]
-    sra_file: String,
-
-    /// Number of threads to use
-    /// 0: use all available cores
-    #[clap(short = 'T', long, default_value = "0")]
-    threads: usize,
-
-    /// Minimum read length to include
-    /// 0: include all reads
-    #[clap(short = 'L', long, default_value = "1")]
-    min_read_len: u32,
-
-    /// Skip technical reads
-    ///
-    /// Default: include all reads
-    #[clap(short = 't', long)]
-    skip_technical: bool,
-}
-impl Arguments {
-    pub fn threads(&self) -> usize {
-        if self.threads == 0 {
-            num_cpus::get()
-        } else {
-            self.threads.min(num_cpus::get())
-        }
-    }
 }
 
 fn main() -> Result<()> {
