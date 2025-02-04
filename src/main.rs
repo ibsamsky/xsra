@@ -201,80 +201,62 @@ fn add_columns(table: &SafeVTable, cursor: &SafeVCursor) -> Result<ColumnIndices
         read_type: 0,
     };
 
-    unsafe {
-        // Add READ column
-        match is_column_present(table, "READ") {
-            Ok(true) => {
-                let col_name = CString::new("READ")?;
-                let rc = VCursorAddColumn(cursor.as_ptr(), &mut indices.seq, col_name.as_ptr());
-                if rc != 0 {
-                    bail!("VCursorAddColumn(READ) failed: {}", rc);
-                }
-            }
-            Ok(false) => bail!("Required column 'READ' not found"),
-            Err(e) => bail!(e),
-        }
-
-        // Add QUALITY column
-        match is_column_present(table, "QUALITY") {
-            Ok(true) => {
-                // let col_name = CString::new("QUALITY")?;
-                let col_name = CString::new("(INSDC:quality:text:phred_33)QUALITY")?;
-                let rc = VCursorAddColumn(cursor.as_ptr(), &mut indices.qual, col_name.as_ptr());
-                if rc != 0 {
-                    bail!("VCursorAddColumn(QUALITY) failed: {}", rc);
-                }
-            }
-            Ok(false) => bail!("Required column 'QUALITY' not found"),
-            Err(e) => bail!(e),
-        }
-
-        // Add READ_START column
-        match is_column_present(table, "READ_START") {
-            Ok(true) => {
-                let col_name = CString::new("(INSDC:coord:zero)READ_START")?;
-                let rc =
-                    VCursorAddColumn(cursor.as_ptr(), &mut indices.read_start, col_name.as_ptr());
-                if rc != 0 {
-                    bail!("VCursorAddColumn(READ_START) failed: {}", rc);
-                }
-            }
-            Ok(false) => bail!("Required column 'READ_START' not found"),
-            Err(e) => bail!(e),
-        }
-
-        // Add READ_LEN column
-        match is_column_present(table, "READ_LEN") {
-            Ok(true) => {
-                let col_name = CString::new("(INSDC:coord:len)READ_LEN")?;
-                let rc =
-                    VCursorAddColumn(cursor.as_ptr(), &mut indices.read_len, col_name.as_ptr());
-                if rc != 0 {
-                    bail!("VCursorAddColumn(READ_LEN) failed: {}", rc);
-                }
-            }
-            Ok(false) => bail!("Required column 'READ_LEN' not found"),
-            Err(e) => bail!(e),
-        }
-
-        // Add READ_TYPE column (optional)
-        match is_column_present(table, "READ_TYPE") {
-            Ok(true) => {
-                let col_name = CString::new("(INSDC:SRA:xread_type)READ_TYPE")?;
-                let rc =
-                    VCursorAddColumn(cursor.as_ptr(), &mut indices.read_type, col_name.as_ptr());
-                if rc != 0 {
-                    eprintln!("Warning: Failed to add READ_TYPE column: {}", rc);
-                }
-            }
-            Ok(false) => {
-                eprintln!("Warning: Optional column 'READ_TYPE' not found");
-            }
-            Err(e) => bail!(e),
-        }
-    }
+    add_cursor_column(table, cursor, &mut indices.seq, "READ", None)?;
+    add_cursor_column(
+        table,
+        cursor,
+        &mut indices.qual,
+        "QUALITY",
+        Some("(INSDC:quality:text:phred_33)QUALITY"),
+    )?;
+    add_cursor_column(
+        table,
+        cursor,
+        &mut indices.read_start,
+        "READ_START",
+        Some("(INSDC:coord:zero)READ_START"),
+    )?;
+    add_cursor_column(
+        table,
+        cursor,
+        &mut indices.read_len,
+        "READ_LEN",
+        Some("(INSDC:coord:len)READ_LEN"),
+    )?;
+    add_cursor_column(
+        table,
+        cursor,
+        &mut indices.read_type,
+        "READ_TYPE",
+        Some("(INSDC:SRA:xread_type)READ_TYPE"),
+    )?;
 
     Ok(indices)
+}
+
+fn add_cursor_column(
+    table: &SafeVTable,
+    cursor: &SafeVCursor,
+    index: &mut u32,
+    col_name: &str,
+    alt_name: Option<&str>,
+) -> Result<()> {
+    match is_column_present(table, col_name) {
+        Ok(true) => {
+            let c_col_name = if let Some(alt_name) = alt_name {
+                CString::new(alt_name)?
+            } else {
+                CString::new(col_name)?
+            };
+            let rc = unsafe { VCursorAddColumn(cursor.as_ptr(), index, c_col_name.as_ptr()) };
+            if rc != 0 {
+                bail!("VCursorAddColumn({}) failed: {}", col_name, rc);
+            }
+            Ok(())
+        }
+        Ok(false) => bail!("Required column '{}' not found", col_name),
+        Err(e) => bail!(e),
+    }
 }
 
 fn open_table(mgr: &SafeVDBManager, schema: &SafeVSchema, sra_file: &str) -> Result<SafeVTable> {
