@@ -14,7 +14,7 @@ use sra_rs::{
 };
 
 const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
-const LOCAL_BUFFER_SIZE: usize = 1 * 1024 * 1024; // 1MB buffer
+const LOCAL_BUFFER_SIZE: usize = 10 * 1024; // 10kB buffer
 
 #[derive(Debug)]
 struct ColumnIndices {
@@ -400,6 +400,7 @@ fn process_range(
         // Write remaining buffer to shared writer
         let mut writer = writer.lock();
         writer.write_all(&local_buffer)?;
+        local_buffer.clear();
     }
 
     Ok(())
