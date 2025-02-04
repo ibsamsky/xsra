@@ -36,10 +36,29 @@ struct Arguments {
     #[clap(short = 'T', long, default_value = "0")]
     threads: usize,
 }
+impl Arguments {
+    pub fn threads(&self) -> usize {
+        if self.threads <= 0 {
+            num_cpus::get()
+        } else {
+            self.threads.min(num_cpus::get())
+        }
+    }
+}
 
 fn main() -> Result<()> {
     let args = Arguments::parse();
 
+    // Get number of rows in SRA file
+    let (first_row_id, row_count) = get_num_spots(&args.sra_file)?;
+
+    // Launch threads
+    launch_threads(&args.sra_file, args.threads(), first_row_id, row_count)?;
+
+    Ok(())
+}
+
+fn get_num_spots(sra_file: &str) -> Result<(i64, u64)> {
     // Initialize VDB components in main thread to determine row count
     let dir = match SafeKDirectory::new() {
         Ok(dir) => dir,
@@ -58,57 +77,55 @@ fn main() -> Result<()> {
         SafeVSchema(schema_ptr)
     };
 
-    let table = open_table(&mgr, &schema, &args.sra_file)?;
+    let table = open_table(&mgr, &schema, sra_file)?;
 
     // Create temporary cursor to get row range
-    let (first_row_id, row_count) = {
-        let temp_cursor = {
-            let mut cursor_ptr = std::ptr::null();
-            let rc = unsafe {
-                VTableCreateCachedCursorRead(table.as_ptr(), &mut cursor_ptr, BUFFER_SIZE)
-            };
-            if rc != 0 {
-                bail!("VTableCreateCachedCursorRead failed: {}", rc);
-            }
-            SafeVCursor(cursor_ptr)
-        };
-
-        let mut seq_idx = 0;
-        let col_name = CString::new("READ")?;
-        unsafe {
-            let rc = VCursorAddColumn(temp_cursor.as_ptr(), &mut seq_idx, col_name.as_ptr());
-            if rc != 0 {
-                bail!("VCursorAddColumn(READ) failed: {}", rc);
-            }
-            let rc = VCursorOpen(temp_cursor.as_ptr());
-            if rc != 0 {
-                bail!("VCursorOpen failed: {}", rc);
-            }
+    let temp_cursor = {
+        let mut cursor_ptr = std::ptr::null();
+        let rc =
+            unsafe { VTableCreateCachedCursorRead(table.as_ptr(), &mut cursor_ptr, BUFFER_SIZE) };
+        if rc != 0 {
+            bail!("VTableCreateCachedCursorRead failed: {}", rc);
         }
-
-        let mut first_row_id = 0;
-        let mut row_count = 0;
-        unsafe {
-            let rc = VCursorIdRange(
-                temp_cursor.as_ptr(),
-                seq_idx,
-                &mut first_row_id,
-                &mut row_count,
-            );
-            if rc != 0 {
-                bail!("VCursorIdRange failed: {}", rc);
-            }
-        }
-
-        (first_row_id, row_count)
+        SafeVCursor(cursor_ptr)
     };
 
-    // Determine number of threads and split work
-    let num_threads = if args.threads == 0 {
-        num_cpus::get()
-    } else {
-        args.threads.min(num_cpus::get())
-    };
+    let mut seq_idx = 0;
+    let col_name = CString::new("READ")?;
+    unsafe {
+        let rc = VCursorAddColumn(temp_cursor.as_ptr(), &mut seq_idx, col_name.as_ptr());
+        if rc != 0 {
+            bail!("VCursorAddColumn(READ) failed: {}", rc);
+        }
+        let rc = VCursorOpen(temp_cursor.as_ptr());
+        if rc != 0 {
+            bail!("VCursorOpen failed: {}", rc);
+        }
+    }
+
+    let mut first_row_id = 0;
+    let mut row_count = 0;
+    unsafe {
+        let rc = VCursorIdRange(
+            temp_cursor.as_ptr(),
+            seq_idx,
+            &mut first_row_id,
+            &mut row_count,
+        );
+        if rc != 0 {
+            bail!("VCursorIdRange failed: {}", rc);
+        }
+    }
+
+    Ok((first_row_id, row_count))
+}
+
+fn launch_threads(
+    sra_file: &str,
+    num_threads: usize,
+    first_row_id: i64,
+    row_count: u64,
+) -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
     let remainder = total_rows % num_threads;
@@ -120,7 +137,7 @@ fn main() -> Result<()> {
     let mut handles = vec![];
 
     for i in 0..num_threads {
-        let sra_file = args.sra_file.clone();
+        let sra_file = sra_file.to_string();
         let writer = Arc::clone(&shared_writer);
         let start = first_row_id + (i * chunk_size) as i64;
         let end = if i == num_threads - 1 {
