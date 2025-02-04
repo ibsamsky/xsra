@@ -333,92 +333,9 @@ fn process_range(
 ) -> Result<()> {
     let mut local_buffer = Vec::with_capacity(LOCAL_BUFFER_SIZE);
     for row_id in start_row..end_row {
-        let mut row_len = 0;
-        let mut num_reads = 0;
-
         // Get sequence data
-        let (seq, qual, read_starts, read_lens, read_types) = unsafe {
-            let mut seq_data = std::ptr::null();
-            let rc = VCursorCellDataDirect(
-                cursor.as_ptr(),
-                row_id,
-                indices.seq,
-                std::ptr::null_mut(),
-                &mut seq_data as *mut *const _ as *mut *const std::ffi::c_void,
-                std::ptr::null_mut(),
-                &mut row_len,
-            );
-            if rc != 0 {
-                bail!("Failed to get sequence data for row {}: {}", row_id, rc);
-            }
-
-            let mut qual_data = std::ptr::null();
-            let rc = VCursorCellDataDirect(
-                cursor.as_ptr(),
-                row_id,
-                indices.qual,
-                std::ptr::null_mut(),
-                &mut qual_data as *mut *const _ as *mut *const std::ffi::c_void,
-                std::ptr::null_mut(),
-                &mut row_len,
-            );
-            if rc != 0 {
-                bail!("Failed to get quality data for row {}: {}", row_id, rc);
-            }
-
-            let mut read_start_data = std::ptr::null();
-            let rc = VCursorCellDataDirect(
-                cursor.as_ptr(),
-                row_id,
-                indices.read_start,
-                std::ptr::null_mut(),
-                &mut read_start_data as *mut *const _ as *mut *const std::ffi::c_void,
-                std::ptr::null_mut(),
-                &mut num_reads,
-            );
-            if rc != 0 {
-                bail!("Failed to get read start data for row {}: {}", row_id, rc);
-            }
-
-            let mut read_len_data = std::ptr::null();
-            let rc = VCursorCellDataDirect(
-                cursor.as_ptr(),
-                row_id,
-                indices.read_len,
-                std::ptr::null_mut(),
-                &mut read_len_data as *mut *const _ as *mut *const std::ffi::c_void,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            );
-            if rc != 0 {
-                bail!("Failed to get read length data for row {}: {}", row_id, rc);
-            }
-
-            let mut read_type_data = std::ptr::null();
-            let rc = VCursorCellDataDirect(
-                cursor.as_ptr(),
-                row_id,
-                indices.read_type,
-                std::ptr::null_mut(),
-                &mut read_type_data as *mut *const _ as *mut *const std::ffi::c_void,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            );
-            if rc != 0 {
-                bail!("Failed to get read type data for row {}: {}", row_id, rc);
-            }
-
-            let seq_slice = std::slice::from_raw_parts(seq_data as *const u8, row_len as usize);
-            let qual_slice = std::slice::from_raw_parts(qual_data as *const u8, row_len as usize);
-            let read_starts =
-                std::slice::from_raw_parts(read_start_data as *const u32, num_reads as usize);
-            let read_lens =
-                std::slice::from_raw_parts(read_len_data as *const u32, num_reads as usize);
-            let read_types =
-                std::slice::from_raw_parts(read_type_data as *const u8, num_reads as usize);
-
-            (seq_slice, qual_slice, read_starts, read_lens, read_types)
-        };
+        let (seq, qual, read_starts, read_lens, read_types) =
+            unsafe { get_sequence_data(cursor, row_id, indices)? };
 
         // Prepare local buffer to minimize lock contention
         for (i, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
@@ -457,4 +374,92 @@ fn process_range(
     }
 
     Ok(())
+}
+
+unsafe fn get_sequence_data<'a>(
+    cursor: &'a SafeVCursor,
+    row_id: i64,
+    indices: &ColumnIndices,
+) -> Result<(&'a [u8], &'a [u8], &'a [u32], &'a [u32], &'a [u8])> {
+    // Initialize row length and number of reads
+    let mut row_len = 0;
+    let mut num_reads = 0;
+
+    let mut seq_data = std::ptr::null();
+    let rc = VCursorCellDataDirect(
+        cursor.as_ptr(),
+        row_id,
+        indices.seq,
+        std::ptr::null_mut(),
+        &mut seq_data as *mut *const _ as *mut *const std::ffi::c_void,
+        std::ptr::null_mut(),
+        &mut row_len,
+    );
+    if rc != 0 {
+        bail!("Failed to get sequence data for row {}: {}", row_id, rc);
+    }
+
+    let mut qual_data = std::ptr::null();
+    let rc = VCursorCellDataDirect(
+        cursor.as_ptr(),
+        row_id,
+        indices.qual,
+        std::ptr::null_mut(),
+        &mut qual_data as *mut *const _ as *mut *const std::ffi::c_void,
+        std::ptr::null_mut(),
+        &mut row_len,
+    );
+    if rc != 0 {
+        bail!("Failed to get quality data for row {}: {}", row_id, rc);
+    }
+
+    let mut read_start_data = std::ptr::null();
+    let rc = VCursorCellDataDirect(
+        cursor.as_ptr(),
+        row_id,
+        indices.read_start,
+        std::ptr::null_mut(),
+        &mut read_start_data as *mut *const _ as *mut *const std::ffi::c_void,
+        std::ptr::null_mut(),
+        &mut num_reads,
+    );
+    if rc != 0 {
+        bail!("Failed to get read start data for row {}: {}", row_id, rc);
+    }
+
+    let mut read_len_data = std::ptr::null();
+    let rc = VCursorCellDataDirect(
+        cursor.as_ptr(),
+        row_id,
+        indices.read_len,
+        std::ptr::null_mut(),
+        &mut read_len_data as *mut *const _ as *mut *const std::ffi::c_void,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if rc != 0 {
+        bail!("Failed to get read length data for row {}: {}", row_id, rc);
+    }
+
+    let mut read_type_data = std::ptr::null();
+    let rc = VCursorCellDataDirect(
+        cursor.as_ptr(),
+        row_id,
+        indices.read_type,
+        std::ptr::null_mut(),
+        &mut read_type_data as *mut *const _ as *mut *const std::ffi::c_void,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if rc != 0 {
+        bail!("Failed to get read type data for row {}: {}", row_id, rc);
+    }
+
+    let seq_slice = std::slice::from_raw_parts(seq_data as *const u8, row_len as usize);
+    let qual_slice = std::slice::from_raw_parts(qual_data as *const u8, row_len as usize);
+    let read_starts = std::slice::from_raw_parts(read_start_data as *const u32, num_reads as usize);
+    let read_lens = std::slice::from_raw_parts(read_len_data as *const u32, num_reads as usize);
+    let read_types = std::slice::from_raw_parts(read_type_data as *const u8, num_reads as usize);
+
+    Ok((seq_slice, qual_slice, read_starts, read_lens, read_types))
 }
