@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use sra_rs::{
     is_column_present, SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, SafeVTable,
     VCursorAddColumn, VCursorCellDataDirect, VCursorIdRange, VCursorOpen, VDBManagerMakeSchema,
-    VDBManagerOpenTableRead, VTableCreateCachedCursorRead,
+    VTableCreateCachedCursorRead,
 };
 
 const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
@@ -22,7 +22,7 @@ struct ColumnIndices {
     read_type: u32,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
@@ -37,30 +37,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut writer = io::BufWriter::with_capacity(BUFFER_SIZE, stdout.lock());
 
     // Initialize VDB components
-    let dir = SafeKDirectory::new().map_err(|rc| format!("KDirectoryNativeDir failed: {}", rc))?;
+    let dir = match SafeKDirectory::new() {
+        Ok(dir) => dir,
+        Err(rc) => bail!(format!("KDirectoryNativeDir failed: {}", rc)),
+    };
 
-    let mgr =
-        SafeVDBManager::new(&dir).map_err(|rc| format!("VDBManagerMakeRead failed: {}", rc))?;
+    let mgr = match SafeVDBManager::new(&dir) {
+        Ok(mgr) => mgr,
+        Err(rc) => bail!(format!("VDBManagerMakeRead failed: {}", rc)),
+    };
 
     // Create schema
     let schema = unsafe {
         let mut schema = std::ptr::null_mut();
         let rc = VDBManagerMakeSchema(mgr.as_ptr(), &mut schema);
         if rc != 0 {
-            return Err(format!("VDBManagerMakeSchema failed: {}", rc).into());
+            bail!("VDBManagerMakeSchema failed: {}", rc);
         }
         SafeVSchema(schema)
     };
 
     // Open table
-    let table = unsafe {
-        let mut table = std::ptr::null();
-        let path = CString::new(sra_file.as_str())?;
-        let rc = VDBManagerOpenTableRead(mgr.as_ptr(), &mut table, schema.as_ptr(), path.as_ptr());
-        if rc != 0 {
-            return Err(format!("VDBManagerOpenTableRead failed: {}", rc).into());
+    let table = {
+        // First try to open as database
+        match mgr.open_database(&schema, sra_file) {
+            Ok(Some(db)) => {
+                // It's a database, try to open the SEQUENCE table
+                match db.open_table("SEQUENCE") {
+                    Ok(table) => table,
+                    Err(rc) => {
+                        bail!(format!("VDatabaseOpenTableRead failed: {}", rc));
+                    }
+                }
+            }
+            Ok(None) => {
+                // Not a database, try to open directly as table
+                match mgr.open_table(&schema, sra_file) {
+                    Ok(Some(table)) => table,
+                    Ok(None) => {
+                        bail!("Failed to open input as either database or table");
+                    }
+                    Err(rc) => {
+                        bail!(format!("VDBManagerOpenTableRead failed: {}", rc));
+                    }
+                }
+            }
+            Err(e) => bail!(e),
         }
-        SafeVTable(table)
     };
 
     // Create cursor
@@ -68,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut cursor = std::ptr::null();
         let rc = VTableCreateCachedCursorRead(table.as_ptr(), &mut cursor, BUFFER_SIZE);
         if rc != 0 {
-            return Err(format!("VTableCreateCursorRead failed: {}", rc).into());
+            bail!("VTableCreateCachedCursorRead failed: {}", rc);
         }
         SafeVCursor(cursor)
     };
@@ -80,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         let rc = VCursorOpen(cursor.as_ptr());
         if rc != 0 {
-            return Err(format!("VCursorOpen failed: {}", rc).into());
+            bail!("VCursorOpen failed: {}", rc);
         }
     }
 
@@ -179,7 +202,7 @@ fn process_rows(
     cursor: &SafeVCursor,
     indices: &ColumnIndices,
     writer: &mut impl Write,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     unsafe {
         // Get row range
         let mut first_row_id = 0;
@@ -191,7 +214,7 @@ fn process_rows(
             &mut row_count,
         );
         if rc != 0 {
-            return Err(format!("VCursorIdRange failed: {}", rc).into());
+            bail!("VCursorIdRange failed: {}", rc);
         }
 
         // Process each row

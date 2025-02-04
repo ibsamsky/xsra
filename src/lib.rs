@@ -109,6 +109,30 @@ impl SafeVDBManager {
     pub fn as_ptr(&self) -> *const VDBManager {
         self.0
     }
+    pub fn open_database(
+        &self,
+        schema: &SafeVSchema,
+        path: &str,
+    ) -> Result<Option<SafeVDatabase>, rc_t> {
+        let mut db = std::ptr::null();
+        let path = CString::new(path).unwrap();
+        let rc = unsafe { VDBManagerOpenDBRead(self.0, &mut db, schema.as_ptr(), path.as_ptr()) };
+        if rc != 0 {
+            return Ok(None); // Not a database
+        }
+        Ok(Some(SafeVDatabase(db)))
+    }
+
+    pub fn open_table(&self, schema: &SafeVSchema, path: &str) -> Result<Option<SafeVTable>, rc_t> {
+        let mut table = std::ptr::null();
+        let path = CString::new(path).unwrap();
+        let rc =
+            unsafe { VDBManagerOpenTableRead(self.0, &mut table, schema.as_ptr(), path.as_ptr()) };
+        if rc != 0 {
+            return Ok(None); // Not a table
+        }
+        Ok(Some(SafeVTable(table)))
+    }
 }
 
 impl SafeVSchema {
@@ -120,6 +144,15 @@ impl SafeVSchema {
 impl SafeVDatabase {
     pub fn as_ptr(&self) -> *const VDatabase {
         self.0
+    }
+    pub fn open_table(&self, name: &str) -> Result<SafeVTable, rc_t> {
+        let mut table = std::ptr::null();
+        let name = CString::new(name).unwrap();
+        let rc = unsafe { VDatabaseOpenTableRead(self.0, &mut table, name.as_ptr()) };
+        if rc != 0 {
+            return Err(rc);
+        }
+        Ok(SafeVTable(table))
     }
 }
 
