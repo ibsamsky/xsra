@@ -110,6 +110,9 @@ fn main() -> Result<()> {
     // Process rows
     process_rows(&cursor, &indices, &mut writer)?;
 
+    // Clean up
+    writer.flush()?;
+
     Ok(())
 }
 
