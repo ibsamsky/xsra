@@ -1,29 +1,45 @@
 // lib.rs
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_void};
+
+/// Opaque structs for the VDB API
+#[repr(C)]
+pub struct KDirectory {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct KDirectory;
+pub struct VDBManager {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct VDBManager;
+pub struct VSchema {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct VSchema;
+pub struct VDatabase {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct VDatabase;
+pub struct VTable {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct VTable;
+pub struct VCursor {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
-pub struct VCursor;
-
-#[repr(C)]
-pub struct KNamelist;
+pub struct KNamelist {
+    _private: [u8; 0],
+}
 
 // Type aliases for common types used in the VDB API
+#[allow(non_camel_case_types)]
 pub type rc_t = i32;
 
 #[link(name = "ncbi-vdb")]
