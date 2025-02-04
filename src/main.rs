@@ -49,7 +49,7 @@ struct Arguments {
 }
 impl Arguments {
     pub fn threads(&self) -> usize {
-        if self.threads <= 0 {
+        if self.threads == 0 {
             num_cpus::get()
         } else {
             self.threads.min(num_cpus::get())
@@ -391,7 +391,7 @@ unsafe fn get_sequence_data<'a>(
         row_id,
         indices.seq,
         std::ptr::null_mut(),
-        &mut seq_data as *mut *const _ as *mut *const std::ffi::c_void,
+        &mut seq_data as *mut *const _,
         std::ptr::null_mut(),
         &mut row_len,
     );
@@ -405,7 +405,7 @@ unsafe fn get_sequence_data<'a>(
         row_id,
         indices.qual,
         std::ptr::null_mut(),
-        &mut qual_data as *mut *const _ as *mut *const std::ffi::c_void,
+        &mut qual_data as *mut *const _,
         std::ptr::null_mut(),
         &mut row_len,
     );
@@ -419,7 +419,7 @@ unsafe fn get_sequence_data<'a>(
         row_id,
         indices.read_start,
         std::ptr::null_mut(),
-        &mut read_start_data as *mut *const _ as *mut *const std::ffi::c_void,
+        &mut read_start_data as *mut *const _,
         std::ptr::null_mut(),
         &mut num_reads,
     );
@@ -433,7 +433,7 @@ unsafe fn get_sequence_data<'a>(
         row_id,
         indices.read_len,
         std::ptr::null_mut(),
-        &mut read_len_data as *mut *const _ as *mut *const std::ffi::c_void,
+        &mut read_len_data as *mut *const _,
         std::ptr::null_mut(),
         std::ptr::null_mut(),
     );
@@ -447,7 +447,7 @@ unsafe fn get_sequence_data<'a>(
         row_id,
         indices.read_type,
         std::ptr::null_mut(),
-        &mut read_type_data as *mut *const _ as *mut *const std::ffi::c_void,
+        &mut read_type_data as *mut *const _,
         std::ptr::null_mut(),
         std::ptr::null_mut(),
     );
