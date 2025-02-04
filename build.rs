@@ -60,7 +60,10 @@ fn main() {
     let vdb_path = find_vdb_lib()
         .expect("Could not find NCBI VDB library. Please install it or set NCBI_VDB_PATH");
 
+    // Add both link search path and rpath
     println!("cargo:rustc-link-search=native={}", vdb_path.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", vdb_path.display());
+
     println!("cargo:rustc-link-lib=ncbi-vdb");
     println!("cargo:rustc-link-lib=stdc++");
 
