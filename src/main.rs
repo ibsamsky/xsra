@@ -21,6 +21,13 @@ fn main() -> Result<()> {
     // Get number of rows in SRA file
     let (first_row_id, row_count) = get_num_spots(&args.sra_file)?;
 
+    // Set the maximum number of rows to process
+    let row_count = if let Some(limit) = args.limit {
+        row_count.min(limit)
+    } else {
+        row_count
+    };
+
     // Launch threads
     launch_threads(
         &args.sra_file,

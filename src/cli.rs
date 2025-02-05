@@ -16,6 +16,13 @@ pub struct Arguments {
     #[clap(short = 'L', long, default_value = "1")]
     pub min_read_len: u32,
 
+    /// Only process up to N spots
+    ///
+    /// Note: this is not the number of reads, but the number of spots.
+    /// If a spot has 4 read segments this will output 4xN reads.
+    #[clap(short = 'l', long)]
+    pub limit: Option<u64>,
+
     /// Skip technical reads
     ///
     /// Default: include all reads
