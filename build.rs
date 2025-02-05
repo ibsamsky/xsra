@@ -1,108 +1,37 @@
 use std::env;
 use std::path::PathBuf;
 
-fn find_vdb_lib() -> Option<PathBuf> {
-    // Check environment variable first
-    if let Ok(path) = env::var("NCBI_VDB_PATH") {
-        // First try with /lib subdirectory
-        let lib_path = PathBuf::from(&path).join("lib");
-        if lib_path.join("libncbi-vdb.so").exists() {
-            return Some(lib_path);
-        }
-
-        // Then try with /lib64 subdirectory
-        let lib64_path = PathBuf::from(&path).join("lib64");
-        if lib64_path.join("libncbi-vdb.so").exists() {
-            return Some(lib64_path);
-        }
-
-        // Finally try the path directly
-        let direct_path = PathBuf::from(&path);
-        if direct_path.join("libncbi-vdb.so").exists() {
-            return Some(direct_path);
-        }
-
-        // Check for versioned libraries
-        for check_path in [lib_path, lib64_path, direct_path] {
-            if let Ok(entries) = std::fs::read_dir(&check_path) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let file_name = entry.file_name();
-                        let file_name = file_name.to_string_lossy();
-                        if file_name.starts_with("libncbi-vdb.so.") {
-                            return Some(check_path);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Common installation paths
-    let paths: Vec<String> = vec![
-        // System-wide installation
-        String::from("/usr/local/ncbi/ncbi-vdb/lib64"),
-        String::from("/usr/local/ncbi/ncbi-vdb/lib"),
-        String::from("/usr/lib64"),
-        String::from("/usr/lib"),
-        // Home directory builds
-        format!(
-            "{}/ncbi-outdir/ncbi-vdb/linux/gcc/x86_64/rel/lib",
-            env::var("HOME").unwrap_or_default()
-        ),
-        format!(
-            "{}/ncbi-outdir/sra-tools/linux/gcc/x86_64/rel/lib",
-            env::var("HOME").unwrap_or_default()
-        ),
-    ];
-
-    // Look for either libncbi-vdb.so or libncbi-vdb.so.* in each path
-    for path in paths {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            // Check for exact match
-            if path.join("libncbi-vdb.so").exists() {
-                return Some(path);
-            }
-
-            // Check for versioned library
-            if let Ok(entries) = std::fs::read_dir(&path) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let file_name = entry.file_name();
-                        let file_name = file_name.to_string_lossy();
-                        if file_name.starts_with("libncbi-vdb.so.") {
-                            return Some(path);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
+fn get_platform_dir() -> String {
+    let os = env::consts::OS;
+    let arch = env::consts::ARCH;
+    format!("{}-{}", os, arch)
 }
 
 fn main() {
-    // Find VDB library
-    let vdb_path = find_vdb_lib()
-        .expect("Could not find NCBI VDB library. Please install it or set NCBI_VDB_PATH");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let platform_dir = get_platform_dir();
 
-    // Add both link search path and rpath
-    println!("cargo:rustc-link-search=native={}", vdb_path.display());
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", vdb_path.display());
+    // Look for static library in platform-specific directory
+    let static_lib_dir = manifest_dir
+        .join("vendor")
+        .join("static")
+        .join(&platform_dir);
 
-    println!("cargo:rustc-link-lib=ncbi-vdb");
-    println!("cargo:rustc-link-lib=stdc++");
-
-    // Add pkg-config support if available
-    if let Ok(lib) = pkg_config::probe_library("ncbi-vdb") {
-        for path in lib.link_paths {
-            println!("cargo:rustc-link-search=native={}", path.display());
-        }
+    if !static_lib_dir.exists() {
+        panic!(
+            "No pre-built static library found for platform: {}",
+            &platform_dir
+        );
     }
 
-    // Rebuild if environment changes
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=NCBI_VDB_PATH");
+    // Link against our bundled static library
+    println!(
+        "cargo:rustc-link-search=native={}",
+        static_lib_dir.display()
+    );
+    println!("cargo:rustc-link-lib=static=ncbi-vdb");
+    println!("cargo:rustc-link-lib=stdc++"); // C++ standard library
+
+    // Rebuild if the static libraries change
+    println!("cargo:rerun-if-changed=vendor/static");
 }
