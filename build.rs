@@ -30,7 +30,13 @@ fn main() {
         static_lib_dir.display()
     );
     println!("cargo:rustc-link-lib=static=ncbi-vdb");
-    println!("cargo:rustc-link-lib=stdc++"); // C++ standard library
+
+    // Platform-specific C++ standard library
+    if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=c++");
+    } else {
+        println!("cargo:rustc-link-lib=stdc++");
+    }
 
     // Rebuild if the static libraries change
     println!("cargo:rerun-if-changed=vendor/static");
