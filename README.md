@@ -21,6 +21,7 @@ However, it is not a complete feature-for-feature replacement, and some function
   - zstd
 - Minimum read length filtering
 - Technical / biological read segement selection
+- Spot subsetting
 
 ## Limitations
 
@@ -50,6 +51,9 @@ xsra <ACCESSION>.sra -s -cz -L 11
 
 # Write all records to stdout but only use 4 threads and compress the output (bgzip)
 xsra <ACCESSION>.sra -T4 -cb
+
+# Write only the first 100 spots to stdout
+xsra <ACCESSION>.sra -l 100
 ```
 
 ## Installation
