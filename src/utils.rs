@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 
-use sra_rs::{SafeVDBManager, SafeVSchema, SafeVTable};
+use xsra::{SafeVDBManager, SafeVSchema, SafeVTable};
 
 pub fn open_table(
     mgr: &SafeVDBManager,

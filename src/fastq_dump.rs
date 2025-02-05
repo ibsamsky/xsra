@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use crate::output::{build_local_buffers, build_writers, write_to_buffer_set};
 
 use super::{open_table, BUFFER_SIZE, RECORD_CAPACITY};
-use sra_rs::{
+use xsra::{
     is_column_present, SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, SafeVTable,
     VCursorAddColumn, VCursorCellDataDirect, VCursorOpen, VDBManagerMakeSchema,
     VTableCreateCachedCursorRead,

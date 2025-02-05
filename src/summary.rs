@@ -3,7 +3,7 @@ use std::ffi::CString;
 use anyhow::{bail, Result};
 
 use super::{open_table, BUFFER_SIZE};
-use sra_rs::{
+use xsra::{
     SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, VCursorAddColumn, VCursorIdRange,
     VCursorOpen, VDBManagerMakeSchema, VTableCreateCachedCursorRead,
 };
