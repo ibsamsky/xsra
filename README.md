@@ -44,6 +44,12 @@ xsra <ACCESSION>.sra -s
 
 # Split records into multiple files and compress them (gzip)
 xsra <ACCESSION>.sra -s -cg
+
+# Split records into multiple files, compress them (zstd), and filter out reads shorter than 11bp
+xsra <ACCESSION>.sra -s -cz -L 11
+
+# Write all records to stdout but only use 4 threads and compress the output (bgzip)
+xsra <ACCESSION>.sra -T4 -cb
 ```
 
 ## Installation
