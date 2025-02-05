@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod cli;
 mod fastq_dump;
+mod output;
 mod summary;
 pub mod utils;
 
@@ -12,7 +13,6 @@ use summary::get_num_spots;
 use utils::open_table;
 
 const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
-const LOCAL_BUFFER_SIZE: usize = 10 * 1024; // 10kB buffer
 
 fn main() -> Result<()> {
     let args = Arguments::parse();
@@ -28,6 +28,8 @@ fn main() -> Result<()> {
         row_count,
         args.min_read_len,
         args.skip_technical,
+        args.split,
+        &args.outdir,
     )?;
 
     Ok(())

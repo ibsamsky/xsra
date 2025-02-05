@@ -21,6 +21,18 @@ pub struct Arguments {
     /// Default: include all reads
     #[clap(short = 't', long)]
     pub skip_technical: bool,
+
+    /// Split read segments to separate files
+    ///
+    /// Default will output interleaved reads to stdout
+    #[clap(short = 's', long)]
+    pub split: bool,
+
+    /// Output directory
+    ///
+    /// Only used when splitting read segments to separate files
+    #[clap(short = 'o', long, default_value = "output")]
+    pub outdir: String,
 }
 impl Arguments {
     pub fn threads(&self) -> usize {

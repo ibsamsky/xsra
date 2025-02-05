@@ -1,12 +1,14 @@
 use std::ffi::CString;
-use std::io::{self, Write};
+use std::io::Write;
 use std::sync::Arc;
 use std::thread;
 
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
 
-use super::{open_table, BUFFER_SIZE, LOCAL_BUFFER_SIZE};
+use crate::output::{build_local_buffers, build_writers, write_to_buffer_set};
+
+use super::{open_table, BUFFER_SIZE};
 use sra_rs::{
     is_column_present, SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, SafeVTable,
     VCursorAddColumn, VCursorCellDataDirect, VCursorOpen, VDBManagerMakeSchema,
@@ -30,20 +32,25 @@ pub fn launch_threads(
     row_count: u64,
     min_read_len: u32,
     skip_technical: bool,
+    split_files: bool,
+    outdir: &str,
 ) -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
     let remainder = total_rows % num_threads;
 
     // Shared writer for output
-    let writer = io::BufWriter::with_capacity(BUFFER_SIZE, io::stdout());
-    let shared_writer = Arc::new(Mutex::new(writer));
+    let writers = if split_files {
+        build_writers(Some(outdir))?
+    } else {
+        build_writers(None)?
+    };
+    let shared_writers = Arc::new(Mutex::new(writers));
 
     let mut handles = vec![];
-
     for i in 0..num_threads {
         let sra_file = sra_file.to_string();
-        let writer = Arc::clone(&shared_writer);
+        let writer = Arc::clone(&shared_writers);
         let start = first_row_id + (i * chunk_size) as i64;
         let end = if i == num_threads - 1 {
             start + (chunk_size + remainder) as i64
@@ -63,8 +70,10 @@ pub fn launch_threads(
     }
 
     // Final flush
-    let mut writer = shared_writer.lock();
-    writer.flush()?;
+    let mut writer = shared_writers.lock();
+    for w in writer.iter_mut() {
+        w.flush()?;
+    }
 
     Ok(())
 }
@@ -73,7 +82,7 @@ fn thread_work(
     sra_file: &str,
     start_row: i64,
     end_row: i64,
-    writer: Arc<Mutex<io::BufWriter<io::Stdout>>>,
+    writer: Arc<Mutex<Vec<Box<dyn Write + Send>>>>,
     min_read_len: u32,
     skip_technical: bool,
 ) -> Result<()> {
@@ -198,19 +207,19 @@ fn process_range(
     indices: &ColumnIndices,
     start_row: i64,
     end_row: i64,
-    writer: &Arc<Mutex<io::BufWriter<io::Stdout>>>,
+    writer: &Arc<Mutex<Vec<Box<dyn Write + Send>>>>,
     min_read_len: u32,
     skip_technical: bool,
 ) -> Result<()> {
-    let mut local_buffer = Vec::with_capacity(LOCAL_BUFFER_SIZE);
+    let mut local_buffers = build_local_buffers(&writer.lock());
     for row_id in start_row..end_row {
         // Get sequence data
         let (seq, qual, read_starts, read_lens, read_types) =
             unsafe { get_sequence_data(cursor, row_id, indices)? };
 
         // Prepare local buffer to minimize lock contention
-        for (i, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
-            if skip_technical && read_types[i] == 0 {
+        for (seg_id, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
+            if skip_technical && read_types[seg_id] == 0 {
                 continue;
             }
 
@@ -221,27 +230,24 @@ fn process_range(
             let seq = &seq[start as usize..end];
             let qual = &qual[start as usize..end];
 
-            writeln!(local_buffer, "@{}.{}", row_id, i)?;
-            local_buffer.extend_from_slice(seq);
-            writeln!(local_buffer)?;
-            writeln!(local_buffer, "+")?;
-            local_buffer.extend_from_slice(qual);
-            writeln!(local_buffer)?;
+            write_to_buffer_set(&mut local_buffers, row_id, seg_id, seq, qual)?;
         }
 
-        if local_buffer.len() > LOCAL_BUFFER_SIZE {
+        if row_id % 1000 == 0 {
             // Write buffer to shared writer
             let mut writer = writer.lock();
-            writer.write_all(&local_buffer)?;
-            local_buffer.clear();
+            for (i, buffer) in local_buffers.iter_mut().enumerate() {
+                writer[i].write_all(buffer)?;
+                buffer.clear();
+            }
         }
     }
 
-    if !local_buffer.is_empty() {
-        // Write remaining buffer to shared writer
-        let mut writer = writer.lock();
-        writer.write_all(&local_buffer)?;
-        local_buffer.clear();
+    // Write remaining buffer to shared writer
+    let mut writer = writer.lock();
+    for (i, buffer) in local_buffers.iter_mut().enumerate() {
+        writer[i].write_all(buffer)?;
+        buffer.clear();
     }
 
     Ok(())
