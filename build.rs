@@ -1,43 +1,61 @@
-use std::env;
-use std::path::PathBuf;
+use num_cpus;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use walkdir::WalkDir;
 
-fn get_platform_dir() -> String {
-    let os = env::consts::OS;
-    let arch = env::consts::ARCH;
-    format!("{}-{}", os, arch)
+fn find_static_lib(start_dir: &Path, lib_name: &str) -> Option<PathBuf> {
+    WalkDir::new(start_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .find(|e| e.file_name().to_string_lossy() == lib_name)
+        .map(|e| e.path().to_path_buf())
 }
 
 fn main() {
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let platform_dir = get_platform_dir();
+    let ncbi_dir = Path::new("vendor/ncbi-vdb");
 
-    // Look for static library in platform-specific directory
-    let static_lib_dir = manifest_dir
-        .join("vendor")
-        .join("static")
-        .join(&platform_dir);
+    // Run configure
+    let configure_status = Command::new("./configure")
+        .current_dir(ncbi_dir)
+        .arg("--build-prefix=comp")
+        .status()
+        .expect("Failed to run configure");
 
-    if !static_lib_dir.exists() {
-        panic!(
-            "No pre-built static library found for platform: {}",
-            &platform_dir
-        );
+    if !configure_status.success() {
+        panic!("Configure failed");
     }
 
-    // Link against our bundled static library
+    // Run make with optimal thread count
+    let threads = num_cpus::get();
+    let make_status = Command::new("make")
+        .current_dir(ncbi_dir)
+        .arg(format!("-j{}", threads))
+        .status()
+        .expect("Failed to run make");
+
+    if !make_status.success() {
+        panic!("Make failed");
+    }
+
+    // Find the static library
+    let lib_path =
+        find_static_lib(ncbi_dir, "libncbi-vdb.a").expect("Could not find libncbi-vdb.a");
+
+    // Tell cargo about the library
     println!(
         "cargo:rustc-link-search=native={}",
-        static_lib_dir.display()
+        lib_path.parent().unwrap().display()
     );
     println!("cargo:rustc-link-lib=static=ncbi-vdb");
 
+    // Add dependencies for cargo rebuild triggers
+    println!("cargo:rerun-if-changed=vendor/ncbi-vdb");
+
+    // Add the c++ standard library
     // Platform-specific C++ standard library
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=c++");
     } else {
         println!("cargo:rustc-link-lib=stdc++");
     }
-
-    // Rebuild if the static libraries change
-    println!("cargo:rerun-if-changed=vendor/static");
 }
