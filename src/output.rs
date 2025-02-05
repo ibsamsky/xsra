@@ -40,7 +40,7 @@ pub fn build_writers(outdir: Option<&str>) -> Result<Vec<Box<dyn Write + Send>>>
 
 pub fn build_local_buffers<T>(global_writer: &[T]) -> Vec<Vec<u8>> {
     let num_buffers = global_writer.len();
-    let buffers = vec![vec![0; BUFFER_SIZE]; num_buffers];
+    let buffers = vec![Vec::with_capacity(BUFFER_SIZE); num_buffers];
     buffers
 }
 
