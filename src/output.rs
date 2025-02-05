@@ -2,8 +2,34 @@ use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
 
 use anyhow::{bail, Result};
+use clap::ValueEnum;
+use gzp::deflate::{Bgzf, Gzip};
+use gzp::par::compress::{ParCompress, ParCompressBuilder};
+use zstd::Encoder;
 
 use super::BUFFER_SIZE;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Compression {
+    #[clap(name = "u")]
+    Uncompressed,
+    #[clap(name = "g")]
+    Gzip,
+    #[clap(name = "b")]
+    Bgzip,
+    #[clap(name = "z")]
+    Zstd,
+}
+impl Compression {
+    pub fn path_name(&self, outdir: &str, prefix: &str, seg_id: usize) -> String {
+        match self {
+            Compression::Uncompressed => format!("{}/{}{}.fastq", outdir, prefix, seg_id),
+            Compression::Gzip => format!("{}/{}{}.fastq.gz", outdir, prefix, seg_id),
+            Compression::Bgzip => format!("{}/{}{}.fastq.bgz", outdir, prefix, seg_id),
+            Compression::Zstd => format!("{}/{}{}.fastq.zst", outdir, prefix, seg_id),
+        }
+    }
+}
 
 fn writer_from_path(path: Option<&str>) -> Result<Box<dyn Write + Send>> {
     if let Some(path) = path {
@@ -16,7 +42,34 @@ fn writer_from_path(path: Option<&str>) -> Result<Box<dyn Write + Send>> {
     }
 }
 
-pub fn build_writers(outdir: Option<&str>) -> Result<Vec<Box<dyn Write + Send>>> {
+fn compression_passthrough<W: Write + Send + 'static>(
+    writer: W,
+    compression: Compression,
+) -> Box<dyn Write + Send> {
+    match compression {
+        Compression::Uncompressed => Box::new(writer),
+        Compression::Gzip => {
+            let pt: ParCompress<Gzip> = ParCompressBuilder::default().from_writer(writer);
+            Box::new(pt)
+        }
+        Compression::Bgzip => {
+            let pt: ParCompress<Bgzf> = ParCompressBuilder::default().from_writer(writer);
+            Box::new(pt)
+        }
+        Compression::Zstd => {
+            let pt = Encoder::new(writer, 3)
+                .expect("ERROR: Could not build zstd encoder.")
+                .auto_finish();
+            Box::new(pt)
+        }
+    }
+}
+
+pub fn build_writers(
+    outdir: Option<&str>,
+    prefix: &str,
+    compression: Compression,
+) -> Result<Vec<Box<dyn Write + Send>>> {
     if let Some(outdir) = outdir {
         // create directory if it doesn't exist
         if !std::path::Path::new(outdir).exists() {
@@ -25,14 +78,16 @@ pub fn build_writers(outdir: Option<&str>) -> Result<Vec<Box<dyn Write + Send>>>
 
         let mut writers = vec![];
         for i in 0..4 {
-            let path = format!("{}/{}.fastq", outdir, i);
+            let path = compression.path_name(outdir, prefix, i);
             let writer = writer_from_path(Some(&path))?;
+            let writer = compression_passthrough(writer, compression);
             writers.push(writer);
         }
         Ok(writers)
     } else {
         let mut writers = vec![];
         let writer = writer_from_path(None)?;
+        let writer = compression_passthrough(writer, compression);
         writers.push(writer);
         Ok(writers)
     }

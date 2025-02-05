@@ -6,7 +6,7 @@ use std::{ffi::CString, ops::Add};
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
 
-use crate::output::{build_local_buffers, build_writers, write_to_buffer_set};
+use crate::output::{build_local_buffers, build_writers, write_to_buffer_set, Compression};
 
 use super::{open_table, BUFFER_SIZE, RECORD_CAPACITY};
 use xsra::{
@@ -118,6 +118,8 @@ pub fn launch_threads(
     skip_technical: bool,
     split_files: bool,
     outdir: &str,
+    prefix: &str,
+    compression: Compression,
 ) -> Result<()> {
     let total_rows = row_count as usize;
     let chunk_size = total_rows / num_threads;
@@ -125,9 +127,9 @@ pub fn launch_threads(
 
     // Shared writer for output
     let writers = if split_files {
-        build_writers(Some(outdir))?
+        build_writers(Some(outdir), prefix, compression)?
     } else {
-        build_writers(None)?
+        build_writers(None, prefix, compression)?
     };
     let shared_writers = Arc::new(Mutex::new(writers));
 
@@ -167,17 +169,15 @@ pub fn launch_threads(
 
     // Remove empty files
     if split_files {
-        stats
-            .reads_per_segment
-            .iter()
-            .enumerate()
-            .try_for_each(|(i, &count)| -> Result<()> {
+        stats.reads_per_segment.iter().enumerate().try_for_each(
+            |(seg_id, &count)| -> Result<()> {
                 if count == 0 {
-                    let path = format!("{}/{}.fastq", outdir, i);
+                    let path = compression.path_name(outdir, prefix, seg_id);
                     std::fs::remove_file(path)?;
                 }
                 Ok(())
-            })?;
+            },
+        )?;
     }
 
     // Print statistics
