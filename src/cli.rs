@@ -10,7 +10,7 @@ pub struct Arguments {
 
     /// Number of threads to use
     /// 0: use all available cores
-    #[clap(short = 'T', long, default_value = "0")]
+    #[clap(short = 'T', long, default_value = "8")]
     threads: usize,
 
     /// Minimum read length to include
