@@ -62,7 +62,7 @@ xsra <ACCESSION>.sra -l 100
 
 ```
 # Clone repo
-git clone https://github.com/noamteyssier/xsra
+git clone https://github.com/arcinstitute/xsra
 cd xsra
 
 # Build and install
