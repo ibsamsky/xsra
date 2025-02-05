@@ -1,7 +1,7 @@
-use std::ffi::CString;
 use std::io::Write;
 use std::sync::Arc;
 use std::thread;
+use std::{ffi::CString, ops::Add};
 
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
@@ -23,6 +23,90 @@ pub struct ColumnIndices {
     pub read_start: u32,
     pub read_len: u32,
     pub read_type: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProcessStatistics {
+    pub num_spots: u64,
+    pub num_reads: u64,
+    /// Number of written reads per segment
+    pub reads_per_segment: Vec<u64>,
+    /// Number of reads filtered by size by segment
+    pub filter_size: Vec<u64>,
+    /// Number of reads filtered by biological/technical type by segment
+    pub filter_type: Vec<u64>,
+}
+impl Add for ProcessStatistics {
+    type Output = Self;
+
+    fn add(mut self, other: Self) -> Self {
+        let num_spots = self.num_spots + other.num_spots;
+        let num_reads = self.num_reads + other.num_reads;
+
+        // Resize vectors to match the longest one
+        if self.reads_per_segment.len() < other.reads_per_segment.len() {
+            self.reads_per_segment
+                .resize(other.reads_per_segment.len(), 0);
+        }
+        if self.filter_size.len() < other.filter_size.len() {
+            self.filter_size.resize(other.filter_size.len(), 0);
+        }
+        if self.filter_type.len() < other.filter_type.len() {
+            self.filter_type.resize(other.filter_type.len(), 0);
+        }
+
+        // Sum vectors
+        let reads_per_segment = self
+            .reads_per_segment
+            .iter()
+            .zip(other.reads_per_segment.iter())
+            .map(|(a, b)| a + b)
+            .collect();
+        let filter_size = self
+            .filter_size
+            .iter()
+            .zip(other.filter_size.iter())
+            .map(|(a, b)| a + b)
+            .collect();
+        let filter_type = self
+            .filter_type
+            .iter()
+            .zip(other.filter_type.iter())
+            .map(|(a, b)| a + b)
+            .collect();
+
+        ProcessStatistics {
+            num_spots,
+            num_reads,
+            reads_per_segment,
+            filter_size,
+            filter_type,
+        }
+    }
+}
+impl ProcessStatistics {
+    pub fn inc_spots(&mut self) {
+        self.num_spots += 1;
+    }
+    pub fn inc_reads(&mut self, seg_id: usize) {
+        self.num_reads += 1;
+        if seg_id >= self.reads_per_segment.len() {
+            self.reads_per_segment.resize(seg_id + 1, 0);
+        }
+        self.reads_per_segment[seg_id] += 1;
+    }
+    pub fn inc_filter_size(&mut self, seg_id: usize) {
+        if seg_id >= self.filter_size.len() {
+            self.filter_size.resize(seg_id + 1, 0);
+        }
+        self.filter_size[seg_id] += 1;
+    }
+    pub fn inc_filter_type(&mut self, seg_id: usize) {
+        if seg_id >= self.filter_type.len() {
+            self.filter_type.resize(seg_id + 1, 0);
+        }
+        self.filter_type[seg_id] += 1;
+    }
 }
 
 pub fn launch_threads(
@@ -58,15 +142,21 @@ pub fn launch_threads(
             start + chunk_size as i64
         };
         handles.push(thread::spawn(move || {
-            if let Err(e) = thread_work(&sra_file, start, end, writer, min_read_len, skip_technical)
-            {
-                eprintln!("Thread error: {}", e);
+            match thread_work(&sra_file, start, end, writer, min_read_len, skip_technical) {
+                Ok(stats) => stats,
+                Err(e) => {
+                    eprintln!("Thread error: {}", e);
+                    ProcessStatistics::default()
+                }
             }
         }));
     }
 
+    // Collect statistics
+    let mut stats = ProcessStatistics::default();
     for handle in handles {
-        handle.join().unwrap();
+        let thread_stat = handle.join().unwrap();
+        stats = stats + thread_stat;
     }
 
     // Final flush
@@ -74,6 +164,9 @@ pub fn launch_threads(
     for w in writer.iter_mut() {
         w.flush()?;
     }
+
+    // Print statistics
+    eprintln!("{:#?}", stats);
 
     Ok(())
 }
@@ -85,7 +178,7 @@ fn thread_work(
     writer: Arc<Mutex<Vec<Box<dyn Write + Send>>>>,
     min_read_len: u32,
     skip_technical: bool,
-) -> Result<()> {
+) -> Result<ProcessStatistics> {
     let dir = match SafeKDirectory::new() {
         Ok(dir) => dir,
         Err(rc) => bail!(format!("KDirectoryNativeDir failed: {}", rc)),
@@ -210,7 +303,8 @@ fn process_range(
     writer: &Arc<Mutex<Vec<Box<dyn Write + Send>>>>,
     min_read_len: u32,
     skip_technical: bool,
-) -> Result<()> {
+) -> Result<ProcessStatistics> {
+    let mut stats = ProcessStatistics::default();
     let mut local_buffers = build_local_buffers(&writer.lock());
     let mut counts = vec![0; local_buffers.len()];
     let mut num_spots = 0;
@@ -222,10 +316,12 @@ fn process_range(
         // Prepare local buffer to minimize lock contention
         for (seg_id, (&start, &len)) in read_starts.iter().zip(read_lens.iter()).enumerate() {
             if skip_technical && read_types[seg_id] == 0 {
+                stats.inc_filter_type(seg_id);
                 continue;
             }
 
             if len < min_read_len {
+                stats.inc_filter_size(seg_id);
                 continue;
             }
             let end = start as usize + len as usize;
@@ -238,6 +334,8 @@ fn process_range(
             } else {
                 counts[seg_id] += 1;
             }
+
+            stats.inc_reads(seg_id);
         }
 
         if num_spots % RECORD_CAPACITY == 0 {
@@ -259,6 +357,7 @@ fn process_range(
         }
 
         num_spots += 1;
+        stats.inc_spots();
     }
 
     // Write remaining buffer to shared writer
@@ -268,7 +367,7 @@ fn process_range(
         buffer.clear();
     }
 
-    Ok(())
+    Ok(stats)
 }
 
 unsafe fn get_sequence_data<'a>(
