@@ -13,8 +13,8 @@ pub struct Arguments {
     #[clap(short = 'T', long, default_value = "8")]
     threads: usize,
 
-    /// Minimum read length to include
-    /// 0: include all reads
+    /// Minimum segment read length to include
+    /// 0: include all read segments (including zero-length segments)
     #[clap(short = 'L', long, default_value = "1")]
     pub min_read_len: u32,
 
