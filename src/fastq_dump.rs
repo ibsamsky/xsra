@@ -233,7 +233,11 @@ fn process_range(
             let qual = &qual[start as usize..end];
 
             write_to_buffer_set(&mut local_buffers, row_id, seg_id, seq, qual)?;
-            counts[seg_id] += 1;
+            if counts.len() == 1 {
+                counts[0] += 1;
+            } else {
+                counts[seg_id] += 1;
+            }
         }
 
         if num_spots % RECORD_CAPACITY == 0 {
