@@ -165,6 +165,21 @@ pub fn launch_threads(
         w.flush()?;
     }
 
+    // Remove empty files
+    if split_files {
+        stats
+            .reads_per_segment
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, &count)| -> Result<()> {
+                if count == 0 {
+                    let path = format!("{}/{}.fastq", outdir, i);
+                    std::fs::remove_file(path)?;
+                }
+                Ok(())
+            })?;
+    }
+
     // Print statistics
     eprintln!("{:#?}", stats);
 
