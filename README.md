@@ -60,6 +60,8 @@ xsra <ACCESSION>.sra -l 100
 
 ## Installation
 
+You will need to install rust to use [`cargo`](https://rustup.rs/).
+
 ```
 # Clone repo
 git clone https://github.com/arcinstitute/xsra
