@@ -107,6 +107,30 @@ impl ProcessStatistics {
         }
         self.filter_type[seg_id] += 1;
     }
+    pub fn pprint<W: Write>(&self, wtr: &mut W) -> Result<()> {
+        writeln!(wtr, "Number of spots processed: {}", self.num_spots)?;
+        writeln!(wtr, "Number of reads written: {}", self.num_reads)?;
+
+        if !self.reads_per_segment.is_empty() {
+            writeln!(wtr, "Reads written per segment:")?;
+            for (i, &count) in self.reads_per_segment.iter().enumerate() {
+                writeln!(wtr, "  Segment {}: {}", i, count)?;
+            }
+        }
+        if !self.filter_size.is_empty() {
+            writeln!(wtr, "Filtered reads by size:")?;
+            for (i, &count) in self.filter_size.iter().enumerate() {
+                writeln!(wtr, "  Segment {}: {}", i, count)?;
+            }
+        }
+        if !self.filter_type.is_empty() {
+            writeln!(wtr, "Filtered reads by type:")?;
+            for (i, &count) in self.filter_type.iter().enumerate() {
+                writeln!(wtr, "  Segment {}: {}", i, count)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn launch_threads(
@@ -181,7 +205,7 @@ pub fn launch_threads(
     }
 
     // Print statistics
-    eprintln!("{:#?}", stats);
+    stats.pprint(&mut std::io::stderr())?;
 
     Ok(())
 }
