@@ -38,6 +38,8 @@ fn main() -> Result<()> {
         args.skip_technical,
         args.split,
         &args.outdir,
+        &args.prefix,
+        args.compression,
     )?;
 
     Ok(())

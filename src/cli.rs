@@ -1,5 +1,7 @@
 use clap::Parser;
 
+use crate::output::Compression;
+
 #[derive(Debug, Parser)]
 pub struct Arguments {
     /// Path to the SRA file or directory
@@ -40,6 +42,18 @@ pub struct Arguments {
     /// Only used when splitting read segments to separate files
     #[clap(short = 'o', long, default_value = "output")]
     pub outdir: String,
+
+    /// Compress output files
+    ///
+    /// [uncompressed, gzip, bgzip, zstd]
+    #[clap(short = 'c', long, default_value = "u")]
+    pub compression: Compression,
+
+    /// Prefix for segment files
+    ///
+    /// Output will follow the pattern: <outdir>/<prefix><segment>.<ext>
+    #[clap(short = 'p', long, default_value = "seg_")]
+    pub prefix: String,
 }
 impl Arguments {
     pub fn threads(&self) -> usize {
