@@ -13,6 +13,7 @@ use summary::get_num_spots;
 use utils::open_table;
 
 const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
+const RECORD_CAPACITY: usize = 512;
 
 fn main() -> Result<()> {
     let args = Arguments::parse();

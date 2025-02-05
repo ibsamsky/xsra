@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 
 use crate::output::{build_local_buffers, build_writers, write_to_buffer_set};
 
-use super::{open_table, BUFFER_SIZE};
+use super::{open_table, BUFFER_SIZE, RECORD_CAPACITY};
 use sra_rs::{
     is_column_present, SafeKDirectory, SafeVCursor, SafeVDBManager, SafeVSchema, SafeVTable,
     VCursorAddColumn, VCursorCellDataDirect, VCursorOpen, VDBManagerMakeSchema,
@@ -212,6 +212,8 @@ fn process_range(
     skip_technical: bool,
 ) -> Result<()> {
     let mut local_buffers = build_local_buffers(&writer.lock());
+    let mut counts = vec![0; local_buffers.len()];
+    let mut num_spots = 0;
     for row_id in start_row..end_row {
         // Get sequence data
         let (seq, qual, read_starts, read_lens, read_types) =
@@ -231,16 +233,28 @@ fn process_range(
             let qual = &qual[start as usize..end];
 
             write_to_buffer_set(&mut local_buffers, row_id, seg_id, seq, qual)?;
+            counts[seg_id] += 1;
         }
 
-        if row_id % 1000 == 0 {
-            // Write buffer to shared writer
+        if num_spots % RECORD_CAPACITY == 0 {
+            // Lock the writer until all buffers are written
             let mut writer = writer.lock();
-            for (i, buffer) in local_buffers.iter_mut().enumerate() {
-                writer[i].write_all(buffer)?;
-                buffer.clear();
+
+            // Write buffer to shared writer
+            for ((global_buf, local_buf), local_count) in writer
+                .iter_mut()
+                .zip(local_buffers.iter_mut())
+                .zip(counts.iter_mut())
+            {
+                if *local_count > 0 {
+                    global_buf.write_all(local_buf)?;
+                }
+                local_buf.clear();
+                *local_count = 0;
             }
         }
+
+        num_spots += 1;
     }
 
     // Write remaining buffer to shared writer
