@@ -14,27 +14,37 @@ fn find_static_lib(start_dir: &Path, lib_name: &str) -> Option<PathBuf> {
 fn main() {
     let ncbi_dir = Path::new("vendor/ncbi-vdb");
 
-    // Run configure
-    let configure_status = Command::new("./configure")
-        .current_dir(ncbi_dir)
-        .arg("--build-prefix=comp")
-        .status()
-        .expect("Failed to run configure");
+    // Only rerun if specific files change
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=vendor/ncbi-vdb/libs");
+    println!("cargo:rerun-if-changed=vendor/ncbi-vdb/interfaces");
+    println!("cargo:rerun-if-changed=vendor/ncbi-vdb/setup/konfigure.perl");
+    println!("cargo:rerun-if-changed=vendor/ncbi-vdb/Makefile.env");
 
-    if !configure_status.success() {
-        panic!("Configure failed");
-    }
+    // Check if the library already exists
+    if find_static_lib(ncbi_dir, "libncbi-vdb.a").is_none() {
+        // Run configure
+        let configure_status = Command::new("./configure")
+            .current_dir(ncbi_dir)
+            .arg("--build-prefix=comp")
+            .status()
+            .expect("Failed to run configure");
 
-    // Run make with optimal thread count
-    let threads = num_cpus::get();
-    let make_status = Command::new("make")
-        .current_dir(ncbi_dir)
-        .arg(format!("-j{}", threads))
-        .status()
-        .expect("Failed to run make");
+        if !configure_status.success() {
+            panic!("Configure failed");
+        }
 
-    if !make_status.success() {
-        panic!("Make failed");
+        // Run make with optimal thread count
+        let threads = num_cpus::get();
+        let make_status = Command::new("make")
+            .current_dir(ncbi_dir)
+            .arg(format!("-j{}", threads))
+            .status()
+            .expect("Failed to run make");
+
+        if !make_status.success() {
+            panic!("Make failed");
+        }
     }
 
     // Find the static library
@@ -48,11 +58,7 @@ fn main() {
     );
     println!("cargo:rustc-link-lib=static=ncbi-vdb");
 
-    // Add dependencies for cargo rebuild triggers
-    println!("cargo:rerun-if-changed=vendor/ncbi-vdb");
-
     // Add the c++ standard library
-    // Platform-specific C++ standard library
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=c++");
     } else {
