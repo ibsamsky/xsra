@@ -30,8 +30,9 @@ However, it is not a complete feature-for-feature replacement, and some function
 - Will not output sequence identifiers in the same format as `fastq-dump` or `fasterq-dump`
 - Spot ordering is not guaranteed to be the same as the SRA archive
   - Read segments are in order to keep paired-end reads together, but the order of spots is dependent on the order of completion of the threads.
-- Installation bundles a static `ncbi-vdb` and not all architectures are supported out of the box.
-  - Currently only: ["linux-x86_64", "macos-aarch64"] are supported
+- Installation bundles `ncbi-vdb` source code and builds it as a static library
+  - This may not work on all systems
+  - The resulting builds will likely be system-specific and the resulting binary may not be portable.
 
 ## Usage
 

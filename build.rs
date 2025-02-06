@@ -1,4 +1,3 @@
-use num_cpus;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
