@@ -41,22 +41,25 @@ If you have an SRA accession number, you can download the archive using the `pre
 
 ```bash
 # Write all records to stdout
-xsra <ACCESSION>.sra
+xsra fastq <ACCESSION>.sra
 
 # Split records into multiple files (will create an output directory and write files there)
-xsra <ACCESSION>.sra -s
+xsra fastq <ACCESSION>.sra -s
 
 # Split records into multiple files and compress them (gzip)
-xsra <ACCESSION>.sra -s -cg
+xsra fastq <ACCESSION>.sra -s -cg
 
 # Split records into multiple files, compress them (zstd), and filter out reads shorter than 11bp
-xsra <ACCESSION>.sra -s -cz -L 11
+xsra fastq <ACCESSION>.sra -s -cz -L 11
 
 # Write all records to stdout but only use 4 threads and compress the output (bgzip)
-xsra <ACCESSION>.sra -T4 -cb
+xsra fastq <ACCESSION>.sra -T4 -cb
 
 # Write only the first 100 spots to stdout
-xsra <ACCESSION>.sra -l 100
+xsra fastq <ACCESSION>.sra -l 100
+
+# Describe the SRA file (spot statistics)
+xsra describe <ACCESSION>.sra
 ```
 
 ## Installation
