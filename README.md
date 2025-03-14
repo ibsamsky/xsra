@@ -40,23 +40,29 @@ However, it is not a complete feature-for-feature replacement, and some function
 If you have an SRA accession number, you can download the archive using the `prefetch` tool provided by the `sra-tools` package.
 
 ```bash
-# Write all records to stdout
-xsra fastq <ACCESSION>.sra
+# Write all records to stdout (defaults to fastq)
+xsra dump <ACCESSION>.sra
+
+# Write all records to stdout (as fasta)
+xsra dump <ACCESSION>.sra -fa
+
+# Write all records to stdout (as fastq)
+xsra dump <ACCESSION>.sra -fq
 
 # Split records into multiple files (will create an output directory and write files there)
-xsra fastq <ACCESSION>.sra -s
+xsra dump <ACCESSION>.sra -s
 
 # Split records into multiple files and compress them (gzip)
-xsra fastq <ACCESSION>.sra -s -cg
+xsra dump <ACCESSION>.sra -s -cg
 
 # Split records into multiple files, compress them (zstd), and filter out reads shorter than 11bp
-xsra fastq <ACCESSION>.sra -s -cz -L 11
+xsra dump <ACCESSION>.sra -s -cz -L 11
 
 # Write all records to stdout but only use 4 threads and compress the output (bgzip)
-xsra fastq <ACCESSION>.sra -T4 -cb
+xsra dump <ACCESSION>.sra -T4 -cb
 
 # Write only the first 100 spots to stdout
-xsra fastq <ACCESSION>.sra -l 100
+xsra dump <ACCESSION>.sra -l 100
 
 # Describe the SRA file (spot statistics)
 xsra describe <ACCESSION>.sra
