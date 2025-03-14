@@ -1,12 +1,13 @@
 [package]
 name = "xsra"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0.95"
 clap = { version = "4.5.28", features = ["derive"] }
 gzp = "0.11.3"
+hashbrown = "0.15.2"
 ncbi-vdb = { git = "ssh://git@github.com/arcinstitute/ncbi-vdb" }
 num_cpus = "1.16.0"
 parking_lot = "0.12.3"

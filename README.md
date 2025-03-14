@@ -64,6 +64,9 @@ xsra dump <ACCESSION>.sra -T4 -cb
 # Write only the first 100 spots to stdout
 xsra dump <ACCESSION>.sra -l 100
 
+# Write only segments 1 and 2 to stdout
+xsra dump <ACCESSION>.sra -I 1,2
+
 # Describe the SRA file (spot statistics)
 xsra describe <ACCESSION>.sra
 ```

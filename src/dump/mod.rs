@@ -5,6 +5,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::Result;
+use hashbrown::HashSet;
 use ncbi_vdb::SraReader;
 use parking_lot::Mutex;
 
@@ -24,9 +25,18 @@ fn launch_threads<W: Write + Send + 'static>(
     filter_opts: FilterOptions,
     format: OutputFormat,
 ) -> Result<ProcessStatistics> {
+    // Segments included in the output
+    let segment_set = if filter_opts.include.is_empty() {
+        None
+    } else {
+        let set: HashSet<usize> = filter_opts.include.iter().copied().collect();
+        Some(set)
+    };
+
     let mut handles = Vec::new();
     for i in 0..num_threads {
         let writer = Arc::clone(&shared_writers);
+        let segment_set = segment_set.clone();
         let start = (i * records_per_thread) + 1;
         let stop = if i == num_threads - 1 {
             start + records_per_thread + remainder - 1
@@ -34,6 +44,7 @@ fn launch_threads<W: Write + Send + 'static>(
             start + records_per_thread - 1
         };
         let path = path.to_string();
+
         let handle = std::thread::spawn(move || -> Result<ProcessStatistics> {
             let reader = SraReader::new(&path)?;
 
@@ -48,6 +59,13 @@ fn launch_threads<W: Write + Send + 'static>(
 
                 // Iterate over segments in the record
                 for segment in record.into_iter() {
+                    // Skip segment if outside of set
+                    if let Some(ref set) = segment_set {
+                        if !set.contains(&segment.sid()) {
+                            continue;
+                        }
+                    }
+
                     // Skip technical segments if required
                     if filter_opts.skip_technical && segment.is_technical() {
                         // Increment filter statistics
