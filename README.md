@@ -20,7 +20,7 @@ However, it is not a complete feature-for-feature replacement, and some function
   - bgzip
   - zstd
 - Minimum read length filtering
-- Technical / biological read segement selection
+- Technical / biological read segment selection
 - Spot subsetting
 
 ## Limitations
