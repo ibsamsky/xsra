@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::ValueEnum;
 use gzp::deflate::{Bgzf, Gzip};
 use gzp::par::compress::{ParCompress, ParCompressBuilder};
@@ -45,22 +45,26 @@ fn writer_from_path(path: Option<&str>) -> Result<Box<dyn Write + Send>> {
 fn compression_passthrough<W: Write + Send + 'static>(
     writer: W,
     compression: Compression,
-) -> Box<dyn Write + Send> {
+    num_threads: usize,
+) -> Result<Box<dyn Write + Send>> {
     match compression {
-        Compression::Uncompressed => Box::new(writer),
+        Compression::Uncompressed => Ok(Box::new(writer)),
         Compression::Gzip => {
-            let pt: ParCompress<Gzip> = ParCompressBuilder::default().from_writer(writer);
-            Box::new(pt)
+            let pt: ParCompress<Gzip> = ParCompressBuilder::default()
+                .num_threads(num_threads)?
+                .from_writer(writer);
+            Ok(Box::new(pt))
         }
         Compression::Bgzip => {
-            let pt: ParCompress<Bgzf> = ParCompressBuilder::default().from_writer(writer);
-            Box::new(pt)
+            let pt: ParCompress<Bgzf> = ParCompressBuilder::default()
+                .num_threads(num_threads)?
+                .from_writer(writer);
+            Ok(Box::new(pt))
         }
         Compression::Zstd => {
-            let pt = Encoder::new(writer, 3)
-                .expect("ERROR: Could not build zstd encoder.")
-                .auto_finish();
-            Box::new(pt)
+            let mut pt = Encoder::new(writer, 3)?;
+            pt.multithread(num_threads as u32)?;
+            Ok(Box::new(pt.auto_finish()))
         }
     }
 }
@@ -69,6 +73,7 @@ pub fn build_writers(
     outdir: Option<&str>,
     prefix: &str,
     compression: Compression,
+    num_threads: usize,
 ) -> Result<Vec<Box<dyn Write + Send>>> {
     if let Some(outdir) = outdir {
         // create directory if it doesn't exist
@@ -76,18 +81,19 @@ pub fn build_writers(
             std::fs::create_dir(outdir)?;
         }
 
+        let c_threads = num_threads / 4;
         let mut writers = vec![];
         for i in 0..4 {
             let path = compression.path_name(outdir, prefix, i);
             let writer = writer_from_path(Some(&path))?;
-            let writer = compression_passthrough(writer, compression);
+            let writer = compression_passthrough(writer, compression, c_threads)?;
             writers.push(writer);
         }
         Ok(writers)
     } else {
         let mut writers = vec![];
         let writer = writer_from_path(None)?;
-        let writer = compression_passthrough(writer, compression);
+        let writer = compression_passthrough(writer, compression, num_threads)?;
         writers.push(writer);
         Ok(writers)
     }
@@ -97,45 +103,4 @@ pub fn build_local_buffers<T>(global_writer: &[T]) -> Vec<Vec<u8>> {
     let num_buffers = global_writer.len();
     let buffers = vec![Vec::with_capacity(BUFFER_SIZE); num_buffers];
     buffers
-}
-
-pub fn write_to_buffer_set(
-    buffers: &mut [Vec<u8>],
-    row_id: i64,
-    seg_id: usize,
-    seq: &[u8],
-    qual: &[u8],
-) -> Result<()> {
-    if buffers.len() == 1 {
-        // Interleaved output - single output handle
-        let buffer = &mut buffers[0];
-        write_to_buffer(buffer, row_id, seg_id, seq, qual)?;
-    } else {
-        if seg_id >= buffers.len() {
-            bail!(
-                "Provided Segment ID: {} is above the expected 4-segment counts",
-                seg_id
-            );
-        }
-        // Multiple output handles
-        let buffer = &mut buffers[seg_id];
-        write_to_buffer(buffer, row_id, seg_id, seq, qual)?;
-    }
-
-    Ok(())
-}
-
-fn write_to_buffer(
-    buffer: &mut Vec<u8>,
-    row_id: i64,
-    seg_id: usize,
-    seq: &[u8],
-    qual: &[u8],
-) -> Result<()> {
-    writeln!(buffer, "@{}:{}", row_id, seg_id)?;
-    buffer.extend_from_slice(seq);
-    writeln!(buffer, "\n+")?;
-    buffer.extend_from_slice(qual);
-    writeln!(buffer)?;
-    Ok(())
 }
