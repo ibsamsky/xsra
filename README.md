@@ -20,7 +20,7 @@ However, it is not a complete feature-for-feature replacement, and some function
   - bgzip
   - zstd
 - Minimum read length filtering
-- Technical / biological read segement selection
+- Technical / biological read segment selection
 - Spot subsetting
 
 ## Limitations
@@ -73,6 +73,14 @@ cargo install --path .
 
 # Check that the installation was successful
 xsra --help
+```
+
+While this is in development there are private repository dependencies that exist.
+To have access to these repositories you'll need to inform cargo to use your CLI `ssh` configuration to resolve them.
+
+```bash
+# Run this to set the correct configuration.
+printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
 ```
 
 ## License

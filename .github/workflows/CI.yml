@@ -23,5 +23,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure GitHub SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "Host github.com" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Verify SSH connection
+        run: ssh -T git@github.com || true # Will exit with error code 1 even when successful
+
+      - name: Setup Cargo Config for SSH
+        run: |
+          mkdir -p ~/.cargo
+          printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
+
       - name: Build
-        run: cargo build --verbose
+        run: |
+          cargo build --verbose
