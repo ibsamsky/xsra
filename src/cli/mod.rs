@@ -7,11 +7,11 @@ use clap::{
 };
 
 mod describe;
-mod fastq;
+mod dump;
 mod filter;
 mod input;
 pub use describe::{DescribeArgs, DescribeOptions};
-pub use fastq::{FastqArgs, FastqOutput};
+pub use dump::{DumpArgs, DumpOutput, OutputFormat};
 pub use filter::FilterOptions;
 
 // Configures Clap v3-style help menu colors
@@ -31,8 +31,8 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Extract the records of the SRA file and output them as FASTQ
-    #[clap(name = "fastq")]
-    Fastq(FastqArgs),
+    #[clap(name = "dump")]
+    Dump(DumpArgs),
 
     /// Describe the read segments in the SRA file within a specified limit
     #[clap(name = "describe")]

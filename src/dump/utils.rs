@@ -3,11 +3,20 @@ use std::io::Write;
 use anyhow::{bail, Result};
 use ncbi_vdb::{Segment, SraReader};
 
-pub fn write_fastq_to_buffer_set(buffers: &mut [Vec<u8>], segment: &Segment<'_>) -> Result<()> {
+use crate::cli::OutputFormat;
+
+pub fn write_segment_to_buffer_set(
+    buffers: &mut [Vec<u8>],
+    segment: &Segment<'_>,
+    format: OutputFormat,
+) -> Result<()> {
     if buffers.len() == 1 {
         // Interleaved output - single output handle
         let buffer = &mut buffers[0];
-        write_fastq(buffer, segment)?;
+        match format {
+            OutputFormat::Fasta => write_fasta(buffer, segment),
+            OutputFormat::Fastq => write_fastq(buffer, segment),
+        }
     } else {
         if segment.sid() >= buffers.len() {
             bail!(
@@ -16,10 +25,11 @@ pub fn write_fastq_to_buffer_set(buffers: &mut [Vec<u8>], segment: &Segment<'_>)
             );
         }
         let buffer = &mut buffers[segment.sid()];
-        write_fastq(buffer, segment)?;
+        match format {
+            OutputFormat::Fasta => write_fasta(buffer, segment),
+            OutputFormat::Fastq => write_fastq(buffer, segment),
+        }
     }
-
-    Ok(())
 }
 
 pub fn write_fastq<W: Write>(wtr: &mut W, segment: &Segment<'_>) -> Result<()> {
@@ -27,6 +37,13 @@ pub fn write_fastq<W: Write>(wtr: &mut W, segment: &Segment<'_>) -> Result<()> {
     wtr.write_all(segment.seq())?;
     writeln!(wtr, "\n+")?;
     wtr.write_all(segment.qual())?;
+    writeln!(wtr)?;
+    Ok(())
+}
+
+pub fn write_fasta<W: Write>(wtr: &mut W, segment: &Segment<'_>) -> Result<()> {
+    writeln!(wtr, ">{}.{}", segment.rid(), segment.sid())?;
+    wtr.write_all(segment.seq())?;
     writeln!(wtr)?;
     Ok(())
 }
