@@ -21,4 +21,10 @@ pub struct FilterOptions {
     /// If a spot has 4 read segments this will output 4xN reads.
     #[clap(short = 'l', long)]
     pub limit: Option<u64>,
+
+    /// Only process specific segments
+    ///
+    /// Default: include all segments
+    #[clap(short = 'I', long, num_args = 0.., value_delimiter = ',')]
+    pub include: Vec<usize>,
 }
