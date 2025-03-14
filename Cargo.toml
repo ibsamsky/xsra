@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1.0.95"
 clap = { version = "4.5.28", features = ["derive"] }
 gzp = "0.11.3"
-ncbi-vdb = { git = "ssh://github.com/arcinstitute/ncbi-vdb" }
+ncbi-vdb = { git = "ssh://git@github.com/arcinstitute/ncbi-vdb" }
 num_cpus = "1.16.0"
 parking_lot = "0.12.3"
 serde = { version = "1.0.217", features = ["derive"] }
