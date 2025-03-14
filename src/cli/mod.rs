@@ -22,7 +22,7 @@ const STYLES: Styles = Styles::styled()
     .placeholder(AnsiColor::Cyan.on_default());
 
 #[derive(Parser, Debug)]
-#[command(styles = STYLES)]
+#[command(styles = STYLES, version)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Command,
