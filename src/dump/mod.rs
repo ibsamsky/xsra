@@ -196,8 +196,12 @@ pub fn dump(
                         output_opts.format,
                         seg_id,
                     );
-                    eprintln!("Removing empty path: {}", path);
-                    std::fs::remove_file(path)?;
+                    if output_opts.keep_empty {
+                        eprintln!("Warning => empty path: {}", path);
+                    } else {
+                        eprintln!("Removing empty path: {}", path);
+                        std::fs::remove_file(path)?;
+                    }
                 }
                 Ok(())
             },
