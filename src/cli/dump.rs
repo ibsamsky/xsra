@@ -5,7 +5,7 @@ use super::filter::FilterOptions;
 use super::input::InputOptions;
 
 #[derive(Parser, Debug)]
-pub struct FastqArgs {
+pub struct DumpArgs {
     #[clap(flatten)]
     pub input: InputOptions,
 
@@ -13,12 +13,12 @@ pub struct FastqArgs {
     pub filter: FilterOptions,
 
     #[clap(flatten)]
-    pub output: FastqOutput,
+    pub output: DumpOutput,
 
     #[clap(flatten)]
-    runtime: FastqRuntime,
+    runtime: DumpRuntime,
 }
-impl FastqArgs {
+impl DumpArgs {
     pub fn threads(&self) -> usize {
         if self.runtime.threads == 0 {
             num_cpus::get()
@@ -30,12 +30,16 @@ impl FastqArgs {
 
 #[derive(Parser, Debug)]
 #[clap(next_help_heading = "OUTPUT OPTIONS")]
-pub struct FastqOutput {
+pub struct DumpOutput {
     /// Output directory
     ///
     /// Only used when splitting read segments to separate files
     #[clap(short = 'o', long, default_value = "output")]
     pub outdir: String,
+
+    /// Output Format
+    #[clap(short = 'f', long, default_value = "q")]
+    pub format: OutputFormat,
 
     /// Split read segments to separate files
     ///
@@ -58,10 +62,26 @@ pub struct FastqOutput {
 
 #[derive(Parser, Debug)]
 #[clap(next_help_heading = "RUNTIME OPTIONS")]
-pub struct FastqRuntime {
+pub struct DumpRuntime {
     /// Number of threads to use
     ///
     /// [0: all available cores]
     #[clap(short = 'T', long, default_value = "8")]
     threads: usize,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum OutputFormat {
+    #[clap(name = "q", help = "FASTQ")]
+    Fastq,
+    #[clap(name = "a", help = "FASTA")]
+    Fasta,
+}
+impl OutputFormat {
+    pub fn ext(&self) -> &str {
+        match self {
+            Self::Fasta => "fa",
+            Self::Fastq => "fq",
+        }
+    }
 }

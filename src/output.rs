@@ -7,6 +7,8 @@ use gzp::deflate::{Bgzf, Gzip};
 use gzp::par::compress::{ParCompress, ParCompressBuilder};
 use zstd::Encoder;
 
+use crate::cli::OutputFormat;
+
 use super::BUFFER_SIZE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -27,6 +29,14 @@ impl Compression {
             Compression::Gzip => format!("{}/{}{}.fastq.gz", outdir, prefix, seg_id),
             Compression::Bgzip => format!("{}/{}{}.fastq.bgz", outdir, prefix, seg_id),
             Compression::Zstd => format!("{}/{}{}.fastq.zst", outdir, prefix, seg_id),
+        }
+    }
+    pub fn ext(&self) -> Option<&str> {
+        match self {
+            Compression::Uncompressed => None,
+            Compression::Gzip => Some("gz"),
+            Compression::Bgzip => Some("bgz"),
+            Compression::Zstd => Some("zst"),
         }
     }
 }
@@ -69,10 +79,26 @@ fn compression_passthrough<W: Write + Send + 'static>(
     }
 }
 
+fn build_path_name(
+    outdir: &str,
+    prefix: &str,
+    compression: Compression,
+    format: OutputFormat,
+    seg_id: usize,
+) -> String {
+    let format_ext = format.ext();
+    if let Some(comp_ext) = compression.ext() {
+        format!("{outdir}/{prefix}{seg_id}.{format_ext}.{comp_ext}")
+    } else {
+        format!("{outdir}/{prefix}{seg_id}.{format_ext}")
+    }
+}
+
 pub fn build_writers(
     outdir: Option<&str>,
     prefix: &str,
     compression: Compression,
+    format: OutputFormat,
     num_threads: usize,
 ) -> Result<Vec<Box<dyn Write + Send>>> {
     if let Some(outdir) = outdir {
@@ -84,7 +110,7 @@ pub fn build_writers(
         let c_threads = num_threads / 4;
         let mut writers = vec![];
         for i in 0..4 {
-            let path = compression.path_name(outdir, prefix, i);
+            let path = build_path_name(outdir, prefix, compression, format, i);
             let writer = writer_from_path(Some(&path))?;
             let writer = compression_passthrough(writer, compression, c_threads)?;
             writers.push(writer);
