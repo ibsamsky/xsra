@@ -75,6 +75,14 @@ cargo install --path .
 xsra --help
 ```
 
+While this is in development there are private repository dependencies that exist.
+To have access to these repositories you'll need to inform cargo to use your CLI `ssh` configuration to resolve them.
+
+```bash
+# Run this to set the correct configuration.
+printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
+```
+
 ## License
 
 MIT

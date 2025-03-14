@@ -23,5 +23,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - name: Setup
+        run: printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
       - name: Build
         run: cargo build --verbose
