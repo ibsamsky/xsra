@@ -45,6 +45,4 @@ jobs:
 
       - name: Build
         run: |
-          # Print debugging info to see what's happening
-          git config --global --list
           cargo build --verbose
