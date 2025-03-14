@@ -2,7 +2,7 @@ use std::io::Result;
 use std::io::Write;
 use std::ops::Add;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProcessStatistics {
     pub num_spots: u64,
     pub num_reads: u64,
@@ -12,6 +12,17 @@ pub struct ProcessStatistics {
     pub filter_size: Vec<u64>,
     /// Number of reads filtered by biological/technical type by segment
     pub filter_type: Vec<u64>,
+}
+impl Default for ProcessStatistics {
+    fn default() -> Self {
+        Self {
+            num_spots: 0,
+            num_reads: 0,
+            reads_per_segment: vec![0; 4],
+            filter_size: vec![0; 4],
+            filter_type: vec![0; 4],
+        }
+    }
 }
 impl Add for ProcessStatistics {
     type Output = Self;
@@ -88,19 +99,19 @@ impl ProcessStatistics {
         writeln!(wtr, "Number of spots processed: {}", self.num_spots)?;
         writeln!(wtr, "Number of reads written: {}", self.num_reads)?;
 
-        if !self.reads_per_segment.is_empty() {
+        if sum_slice(&self.reads_per_segment) > 0 {
             writeln!(wtr, "Reads written per segment:")?;
             for (i, &count) in self.reads_per_segment.iter().enumerate() {
                 writeln!(wtr, "  Segment {}: {}", i, count)?;
             }
         }
-        if !self.filter_size.is_empty() {
+        if sum_slice(&self.filter_size) > 0 {
             writeln!(wtr, "Filtered reads by size:")?;
             for (i, &count) in self.filter_size.iter().enumerate() {
                 writeln!(wtr, "  Segment {}: {}", i, count)?;
             }
         }
-        if !self.filter_type.is_empty() {
+        if sum_slice(&self.filter_type) > 0 {
             writeln!(wtr, "Filtered reads by type:")?;
             for (i, &count) in self.filter_type.iter().enumerate() {
                 writeln!(wtr, "  Segment {}: {}", i, count)?;
@@ -108,4 +119,8 @@ impl ProcessStatistics {
         }
         Ok(())
     }
+}
+
+fn sum_slice(vec: &[u64]) -> u64 {
+    vec.iter().sum()
 }
