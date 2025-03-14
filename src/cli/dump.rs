@@ -58,6 +58,12 @@ pub struct DumpOutput {
     /// [uncompressed, gzip, bgzip, zstd]
     #[clap(short = 'c', long, default_value = "u")]
     pub compression: Compression,
+
+    /// Keep empty files
+    ///
+    /// By default empty files will be deleted
+    #[clap(short = 'E', long)]
+    pub keep_empty: bool,
 }
 
 #[derive(Parser, Debug)]
