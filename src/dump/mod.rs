@@ -9,7 +9,7 @@ use ncbi_vdb::SraReader;
 use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, OutputFormat};
-use crate::output::{build_local_buffers, build_writers};
+use crate::output::{build_local_buffers, build_path_name, build_writers};
 use crate::RECORD_CAPACITY;
 
 use stats::ProcessStatistics;
@@ -189,11 +189,14 @@ pub fn dump(
         stats.reads_per_segment.iter().enumerate().try_for_each(
             |(seg_id, &count)| -> Result<()> {
                 if count == 0 {
-                    let path = output_opts.compression.path_name(
+                    let path = build_path_name(
                         &output_opts.outdir,
                         &output_opts.prefix,
+                        output_opts.compression,
+                        output_opts.format,
                         seg_id,
                     );
+                    eprintln!("Removing empty path: {}", path);
                     std::fs::remove_file(path)?;
                 }
                 Ok(())

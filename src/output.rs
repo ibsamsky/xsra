@@ -23,14 +23,6 @@ pub enum Compression {
     Zstd,
 }
 impl Compression {
-    pub fn path_name(&self, outdir: &str, prefix: &str, seg_id: usize) -> String {
-        match self {
-            Compression::Uncompressed => format!("{}/{}{}.fastq", outdir, prefix, seg_id),
-            Compression::Gzip => format!("{}/{}{}.fastq.gz", outdir, prefix, seg_id),
-            Compression::Bgzip => format!("{}/{}{}.fastq.bgz", outdir, prefix, seg_id),
-            Compression::Zstd => format!("{}/{}{}.fastq.zst", outdir, prefix, seg_id),
-        }
-    }
     pub fn ext(&self) -> Option<&str> {
         match self {
             Compression::Uncompressed => None,
@@ -79,7 +71,7 @@ fn compression_passthrough<W: Write + Send + 'static>(
     }
 }
 
-fn build_path_name(
+pub fn build_path_name(
     outdir: &str,
     prefix: &str,
     compression: Compression,
