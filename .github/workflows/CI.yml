@@ -35,8 +35,16 @@ jobs:
           echo "Host github.com" >> ~/.ssh/config
           echo "  StrictHostKeyChecking no" >> ~/.ssh/config
 
+      - name: Verify SSH connection
+        run: ssh -T git@github.com || true # Will exit with error code 1 even when successful
+
       - name: Setup Cargo Config for SSH
-        run: printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
+        run: |
+          mkdir -p ~/.cargo
+          printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
 
       - name: Build
-        run: cargo build --verbose
+        run: |
+          # Print debugging info to see what's happening
+          git config --global --list
+          cargo build --verbose
