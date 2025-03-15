@@ -70,7 +70,7 @@ impl DescribeStats {
         let stats = (0..num_segments)
             .map(|idx| {
                 SegmentStats::new(
-                    idx + 1,
+                    idx,
                     segment_types[idx],
                     average_segment_lengths[idx],
                     average_segment_qualities[idx],
