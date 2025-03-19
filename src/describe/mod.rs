@@ -1,7 +1,9 @@
+use std::path::Path;
+
 use anyhow::Result;
 use ncbi_vdb::{SegmentType, SraReader};
 
-use crate::cli::DescribeOptions;
+use crate::{cli::DescribeOptions, prefetch::identify_url};
 
 mod stats;
 use stats::DescribeStats;
@@ -19,8 +21,16 @@ fn calculate_average_quality(qual: &[u8]) -> f64 {
     total_score as f64 / qual.len() as f64
 }
 
-pub fn describe(sra_file: &str, opts: DescribeOptions) -> Result<()> {
-    let reader = SraReader::new(sra_file)?;
+pub fn describe(accession: &str, opts: DescribeOptions) -> Result<()> {
+    let accession = if !Path::new(accession).exists() {
+        eprintln!("Identifying SRA data URL for Accession: {}", accession);
+        let url = identify_url(accession)?;
+        eprintln!("Streaming SRA records from URL: {}", url);
+        url
+    } else {
+        accession.to_string()
+    };
+    let reader = SraReader::new(&accession)?;
     let num_spots = reader.stop();
 
     let l_bound = opts.skip.max(1);

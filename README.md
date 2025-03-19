@@ -22,6 +22,8 @@ However, it is not a complete feature-for-feature replacement, and some function
 - Minimum read length filtering
 - Technical / biological read segment selection
 - Spot subsetting
+- Stream directly from NCBI without intermediate prefetch
+- Prefetch SRA records for faster IO
 
 ## Limitations
 
@@ -36,8 +38,7 @@ However, it is not a complete feature-for-feature replacement, and some function
 
 ## Usage
 
-`xsra` expects to be run on an on-disk SRA archive.
-If you have an SRA accession number, you can download the archive using the `prefetch` tool provided by the `sra-tools` package.
+`xsra` can either be run with on-disk accessions or can be streamed from SRA directly.
 
 ```bash
 # Write all records to stdout (defaults to fastq)
@@ -69,6 +70,9 @@ xsra dump <ACCESSION>.sra -I 1,2
 
 # Describe the SRA file (spot statistics)
 xsra describe <ACCESSION>.sra
+
+# Download an accession to disk
+xsra prefetch <ACCESSION>.sra
 ```
 
 ## Installation
