@@ -2,6 +2,7 @@ mod stats;
 mod utils;
 
 use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -11,6 +12,7 @@ use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, OutputFormat};
 use crate::output::{build_local_buffers, build_path_name, build_writers};
+use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
 
 use stats::ProcessStatistics;
@@ -154,7 +156,16 @@ pub fn dump(
     output_opts: &DumpOutput,
     filter_opts: FilterOptions,
 ) -> Result<()> {
-    let num_records = get_num_records(path)?;
+    let path = if !Path::new(path).exists() {
+        eprintln!("Identifying SRA data URL for Accession: {}", path);
+        let url = identify_url(path)?;
+        eprintln!("Streaming SRA records from URL: {}", url);
+        url
+    } else {
+        path.to_string()
+    };
+
+    let num_records = get_num_records(&path)?;
 
     // Adjust the number of records to process if a limit is provided
     let num_records = if let Some(limit) = filter_opts.limit {
@@ -193,7 +204,7 @@ pub fn dump(
 
     // Launch worker threads
     let stats = launch_threads(
-        path,
+        &path,
         num_threads,
         records_per_thread,
         remainder,
