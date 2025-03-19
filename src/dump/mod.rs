@@ -151,21 +151,21 @@ fn launch_threads<W: Write + Send + 'static>(
 }
 
 pub fn dump(
-    path: &str,
+    accession: &str,
     num_threads: u64,
     output_opts: &DumpOutput,
     filter_opts: FilterOptions,
 ) -> Result<()> {
-    let path = if !Path::new(path).exists() {
-        eprintln!("Identifying SRA data URL for Accession: {}", path);
-        let url = identify_url(path)?;
+    let accession = if !Path::new(accession).exists() {
+        eprintln!("Identifying SRA data URL for Accession: {}", accession);
+        let url = identify_url(accession)?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
-        path.to_string()
+        accession.to_string()
     };
 
-    let num_records = get_num_records(&path)?;
+    let num_records = get_num_records(&accession)?;
 
     // Adjust the number of records to process if a limit is provided
     let num_records = if let Some(limit) = filter_opts.limit {
@@ -204,7 +204,7 @@ pub fn dump(
 
     // Launch worker threads
     let stats = launch_threads(
-        &path,
+        &accession,
         num_threads,
         records_per_thread,
         remainder,

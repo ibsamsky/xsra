@@ -5,5 +5,5 @@ use clap::Parser;
 pub struct InputOptions {
     /// SRA accession or path to discrete SRA file or Directory
     #[clap(name = "SRA accession", required = true)]
-    pub sra_file: String,
+    pub accession: String,
 }

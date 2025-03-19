@@ -21,16 +21,16 @@ fn calculate_average_quality(qual: &[u8]) -> f64 {
     total_score as f64 / qual.len() as f64
 }
 
-pub fn describe(sra_file: &str, opts: DescribeOptions) -> Result<()> {
-    let sra_file = if !Path::new(sra_file).exists() {
-        eprintln!("Identifying SRA data URL for Accession: {}", sra_file);
-        let url = identify_url(sra_file)?;
+pub fn describe(accession: &str, opts: DescribeOptions) -> Result<()> {
+    let accession = if !Path::new(accession).exists() {
+        eprintln!("Identifying SRA data URL for Accession: {}", accession);
+        let url = identify_url(accession)?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
-        sra_file.to_string()
+        accession.to_string()
     };
-    let reader = SraReader::new(&sra_file)?;
+    let reader = SraReader::new(&accession)?;
     let num_spots = reader.stop();
 
     let l_bound = opts.skip.max(1);

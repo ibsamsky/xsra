@@ -19,12 +19,12 @@ fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
         cli::Command::Dump(args) => dump(
-            &args.input.sra_file,
+            &args.input.accession,
             args.threads() as u64,
             &args.output,
             args.filter,
         ),
-        cli::Command::Describe(args) => describe(&args.input.sra_file, args.options),
+        cli::Command::Describe(args) => describe(&args.input.accession, args.options),
         cli::Command::Prefetch(args) => prefetch(&args.accession, args.output.as_deref()),
     }
 }
