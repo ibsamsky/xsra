@@ -10,7 +10,7 @@ use hashbrown::HashSet;
 use ncbi_vdb::SraReader;
 use parking_lot::Mutex;
 
-use crate::cli::{DumpOutput, FilterOptions, OutputFormat};
+use crate::cli::{DumpOutput, FilterOptions, InputOptions, OutputFormat};
 use crate::output::{build_local_buffers, build_path_name, build_writers};
 use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
@@ -151,18 +151,21 @@ fn launch_threads<W: Write + Send + 'static>(
 }
 
 pub fn dump(
-    accession: &str,
+    input: &InputOptions,
     num_threads: u64,
     output_opts: &DumpOutput,
     filter_opts: FilterOptions,
 ) -> Result<()> {
-    let accession = if !Path::new(accession).exists() {
-        eprintln!("Identifying SRA data URL for Accession: {}", accession);
-        let url = identify_url(accession)?;
+    let accession = if !Path::new(&input.accession).exists() {
+        eprintln!(
+            "Identifying SRA data URL for Accession: {}",
+            &input.accession
+        );
+        let url = identify_url(&input.accession, input.full_quality, input.provider)?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
-        accession.to_string()
+        input.accession.to_string()
     };
 
     let num_records = get_num_records(&accession)?;

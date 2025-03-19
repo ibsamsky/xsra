@@ -8,33 +8,54 @@ use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::blocking::Client;
 
+use crate::cli::{InputOptions, Provider};
+
 pub fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=runinfo",
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
         accession
     );
     let response = Client::new().get(&query_url).send()?.text()?;
     Ok(response)
 }
 
-pub fn parse_url(accession: &str, response: &str) -> Option<String> {
-    for line in response.split('\n') {
-        if line.contains("<download_path>") && line.contains(accession) {
-            let url = line
-                .replace("<download_path>", "")
-                .replace("</download_path>", "");
+pub fn parse_url(
+    accession: &str,
+    response: &str,
+    full_quality: bool,
+    provider: Provider,
+) -> Option<String> {
+    for line in response.replace(" ", "\n").split("\n") {
+        if line.contains("url=")
+            && line.contains(accession)
+            && !line.contains(".fastq")
+            && !line.contains(".gz")
+            && line.contains(provider.url_prefix())
+        {
+            if full_quality && line.contains(".lite") {
+                continue;
+            }
+            if !full_quality && !line.contains(".lite") {
+                continue;
+            }
+            let url = line.replace("url=", "").replace('"', "");
             return Some(url);
         }
     }
     None
 }
 
-pub fn identify_url(accession: &str) -> Result<String> {
+pub fn identify_url(accession: &str, full_quality: bool, provider: Provider) -> Result<String> {
     let entrez_response = query_entrez(accession)?;
-    if let Some(url) = parse_url(accession, &entrez_response) {
-        Ok(url)
+    if let Some(url) = parse_url(accession, &entrez_response, full_quality, provider) {
+        match provider {
+            Provider::Https => Ok(url),
+            _ => {
+                bail!("Identified the {provider}-URL, but cannot currently proceed: {url}",);
+            }
+        }
     } else {
-        bail!("Unable to identify a download URL for accession: {accession}")
+        bail!("Unable to identify a download URL for accession: <{accession}> with full_quality={full_quality} and provider={provider}")
     }
 }
 
@@ -67,11 +88,11 @@ async fn download_url(url: &str, path: &str, pb: ProgressBar) -> Result<()> {
     Ok(())
 }
 
-pub fn prefetch(accession: &str, output: Option<&str>) -> Result<()> {
-    let url = identify_url(accession)?;
+pub fn prefetch(input: &InputOptions, output: Option<&str>) -> Result<()> {
+    let url = identify_url(&input.accession, input.full_quality, input.provider)?;
     let path = output
         .map(String::from)
-        .unwrap_or_else(|| format!("{}.sra", accession));
+        .unwrap_or_else(|| format!("{}.sra", &input.accession));
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async {
         let pb = ProgressBar::new(0);

@@ -1,13 +1,15 @@
 use clap::Parser;
 
+use super::input::InputOptions;
+
 #[derive(Debug, Parser)]
 pub struct PrefetchArgs {
-    #[clap(required = true)]
-    pub accession: String,
+    #[clap(flatten)]
+    pub input: InputOptions,
 
     /// Path to write the .sra file to
     ///
     /// default: './<accession>.sra'
-    #[clap(short, long)]
+    #[clap(short, long, next_help_heading = "OUTPUT OPTIONS")]
     pub output: Option<String>,
 }

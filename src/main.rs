@@ -19,12 +19,12 @@ fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
         cli::Command::Dump(args) => dump(
-            &args.input.accession,
+            &args.input,
             args.threads() as u64,
             &args.output,
             args.filter,
         ),
-        cli::Command::Describe(args) => describe(&args.input.accession, args.options),
-        cli::Command::Prefetch(args) => prefetch(&args.accession, args.output.as_deref()),
+        cli::Command::Describe(args) => describe(&args.input, args.options),
+        cli::Command::Prefetch(args) => prefetch(&args.input, args.output.as_deref()),
     }
 }
