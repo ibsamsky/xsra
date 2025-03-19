@@ -10,9 +10,11 @@ mod describe;
 mod dump;
 mod filter;
 mod input;
+mod prefetch;
 pub use describe::{DescribeArgs, DescribeOptions};
 pub use dump::{DumpArgs, DumpOutput, OutputFormat};
 pub use filter::FilterOptions;
+pub use prefetch::PrefetchArgs;
 
 // Configures Clap v3-style help menu colors
 const STYLES: Styles = Styles::styled()
@@ -37,4 +39,8 @@ pub enum Command {
     /// Describe the read segments in the SRA file within a specified limit
     #[clap(name = "describe")]
     Describe(DescribeArgs),
+
+    /// Downloads an SRA file to disk
+    #[clap(name = "prefetch")]
+    Prefetch(PrefetchArgs),
 }
