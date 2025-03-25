@@ -1,6 +1,6 @@
 [package]
 name = "xsra"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 
 [dependencies]
@@ -13,7 +13,7 @@ indicatif = "0.17.11"
 ncbi-vdb = { git = "ssh://git@github.com/arcinstitute/ncbi-vdb" }
 num_cpus = "1.16.0"
 parking_lot = "0.12.3"
-reqwest = { version = "0.12.15", features = ["blocking", "stream"] }
+reqwest = { version = "0.12.15", default-features = false, features = ["blocking", "stream", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 tokio = { version = "1.44.1", features = ["rt", "rt-multi-thread"] }
