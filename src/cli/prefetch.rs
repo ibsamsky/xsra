@@ -1,11 +1,11 @@
 use clap::Parser;
 
-use super::input::InputOptions;
+use super::MultiInputOptions;
 
 #[derive(Debug, Parser)]
 pub struct PrefetchArgs {
     #[clap(flatten)]
-    pub input: InputOptions,
+    pub input: MultiInputOptions,
 
     /// Path to write the .sra file to
     ///

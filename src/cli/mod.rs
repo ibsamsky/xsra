@@ -14,7 +14,7 @@ mod prefetch;
 pub use describe::{DescribeArgs, DescribeOptions};
 pub use dump::{DumpArgs, DumpOutput, OutputFormat};
 pub use filter::FilterOptions;
-pub use input::{InputOptions, Provider};
+pub use input::{AccessionOptions, InputOptions, MultiInputOptions, Provider};
 pub use prefetch::PrefetchArgs;
 
 // Configures Clap v3-style help menu colors

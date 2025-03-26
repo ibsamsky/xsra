@@ -30,7 +30,7 @@ pub fn describe(input: &InputOptions, opts: DescribeOptions) -> Result<()> {
             "Identifying SRA data URL for Accession: {}",
             &input.accession
         );
-        let url = identify_url(&input.accession, input.full_quality, input.provider)?;
+        let url = identify_url(&input.accession, input.options)?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
