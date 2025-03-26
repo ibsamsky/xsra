@@ -9,6 +9,31 @@ pub struct InputOptions {
     #[clap(name = "SRA accession", required = true)]
     pub accession: String,
 
+    /// Accession options
+    #[clap(flatten)]
+    pub options: AccessionOptions,
+}
+
+#[derive(Debug, Parser)]
+#[clap(next_help_heading = "INPUT OPTIONS")]
+pub struct MultiInputOptions {
+    /// SRA accession or path to discrete SRA file or Directory
+    #[clap(name = "SRA accession(s)", required = true, num_args = 1..)]
+    pub accessions: Vec<String>,
+
+    /// Accession options
+    #[clap(flatten)]
+    pub options: AccessionOptions,
+}
+impl MultiInputOptions {
+    pub fn accession_set(&self) -> &[String] {
+        &self.accessions
+    }
+}
+
+#[derive(Debug, Clone, Copy, Parser)]
+#[clap(next_help_heading = "ACCESSION OPTIONS")]
+pub struct AccessionOptions {
     /// Only download an SRA with complete quality scores
     ///
     /// Default: lite
