@@ -129,32 +129,6 @@ pub async fn identify_urls(
     Ok(processed_results)
 }
 
-// // Rate-limited version that processes multiple accessions by calling identify_url
-// pub async fn identify_urls(
-//     accessions: &[String],
-//     options: AccessionOptions,
-// ) -> Result<Vec<(String, Result<String>)>> {
-//     eprintln!("Identifying URLs for {} accessions...", accessions.len());
-
-//     let mut results = Vec::new();
-//     let mut last_request = Instant::now();
-
-//     for accession in accessions {
-//         eprintln!(">> Identifying URL for accession: {}", accession);
-//         // Rate limiting: ensure at least some time between requests (3 per second)
-//         let elapsed = last_request.elapsed();
-//         if elapsed < Duration::from_millis(RATE_LIMIT_MS) {
-//             sleep(Duration::from_millis(RATE_LIMIT_MS) - elapsed).await;
-//         }
-
-//         last_request = Instant::now();
-//         let result = identify_url(accession, options);
-//         results.push((accession.clone(), result));
-//     }
-
-//     Ok(results)
-// }
-
 /// Download a file from a URL asynchronously
 async fn download_url(url: String, path: String, pb: ProgressBar) -> Result<()> {
     let filename = url.split('/').last().unwrap_or("");
