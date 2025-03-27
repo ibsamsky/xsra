@@ -75,6 +75,13 @@ xsra describe <ACCESSION>.sra
 xsra prefetch <ACCESSION>.sra
 ```
 
+You can also use alternative data providers such as `GCP`.
+You will need to provide a project ID.
+
+```bash
+xsra prefetch <ACCESSION> -P gcp -G <GCP_PROJECT_ID>
+```
+
 ## Installation
 
 You will need to install rust to use [`cargo`](https://rustup.rs/).
