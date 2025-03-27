@@ -51,7 +51,7 @@ pub fn parse_url(
     None
 }
 
-pub fn identify_url(accession: &str, options: AccessionOptions) -> Result<String> {
+pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<String> {
     let entrez_response = query_entrez(accession)?;
     if let Some(url) = parse_url(
         accession,
@@ -79,7 +79,7 @@ pub fn identify_url(accession: &str, options: AccessionOptions) -> Result<String
 // Rate-limited version that processes multiple accessions by calling identify_url
 pub async fn identify_urls(
     accessions: &[String],
-    options: AccessionOptions,
+    options: &AccessionOptions,
 ) -> Result<Vec<(String, Result<String>)>> {
     let total = accessions.len();
     eprintln!("Identifying URLs for {} accessions...", total);
@@ -90,6 +90,7 @@ pub async fn identify_urls(
 
     for accession in accessions {
         let accession_clone = accession.clone();
+        let options_clone = options.clone();
         let sem_clone = Arc::clone(&semaphore);
 
         // Create a task for each accession that respects the semaphore
@@ -102,7 +103,7 @@ pub async fn identify_urls(
             eprintln!(">> Identifying URL for accession: {}", accession_clone);
 
             // Execute the request
-            let result = identify_url(&accession_clone, options);
+            let result = identify_url(&accession_clone, &options_clone);
 
             // The permit is automatically released when it goes out of scope
             // Small delay to ensure we don't exceed rate limits when permits are released in bursts
@@ -158,6 +159,42 @@ async fn download_url(url: String, path: String, pb: ProgressBar) -> Result<()> 
     Ok(())
 }
 
+/// Download a file from a GCP URL using gsutil
+async fn download_url_gcp(
+    url: String,
+    path: String,
+    project_id: String,
+    pb: ProgressBar,
+) -> Result<()> {
+    let filename = url.split('/').last().unwrap_or("");
+    pb.set_message(format!("GCP: {}", filename));
+
+    // Set indeterminate progress style - we'll let gsutil show its own progress
+    pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
+
+    // Prepare the gsutil command
+    let mut cmd = std::process::Command::new("gsutil");
+    cmd.arg("cp")
+        .arg("-u")
+        .arg(format!("-p={}", project_id))
+        .arg(&url)
+        .arg(&path)
+        // Use inherit to show gsutil's own progress bar in the terminal
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+
+    // Execute the command and wait for it to complete
+    let status = cmd.spawn()?.wait()?;
+
+    if !status.success() {
+        pb.finish_with_message(format!("Failed to download {}", filename));
+        bail!("gsutil command failed with exit code: {}", status);
+    }
+
+    pb.finish_with_message(format!("Downloaded {} successfully", filename));
+    Ok(())
+}
+
 pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
     let accessions = input.accession_set();
 
@@ -165,32 +202,47 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
         bail!("No accessions provided");
     }
 
-    // For a single accession, use the original blocking approach
+    // Create runtime for async operations
+    let runtime = tokio::runtime::Runtime::new()?;
+
+    // For a single accession
     if accessions.len() == 1 {
-        let url = identify_url(&accessions[0], input.options)?;
+        let url = identify_url(&accessions[0], &input.options)?;
         let path = match output_dir {
             Some(dir) => format!("{}/{}.sra", dir, &accessions[0]),
             None => format!("{}.sra", &accessions[0]),
         };
 
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(async {
+        return runtime.block_on(async {
             let pb = ProgressBar::new(0);
-            download_url(url, path, pb).await
-        })?;
 
-        return Ok(());
+            match input.options.provider {
+                Provider::Https => download_url(url, path, pb).await,
+                Provider::Gcp => {
+                    let project_id = match &input.options.gcp_project_id {
+                        Some(id) => id.to_string(),
+                        None => bail!("GCP project ID is required for GCP downloads"),
+                    };
+                    download_url_gcp(url, path, project_id, pb).await
+                }
+                _ => bail!("Unsupported provider: {:?}", input.options.provider),
+            }
+        });
     }
 
-    // For multiple accessions, use the rate-limited approach
-    let runtime = tokio::runtime::Runtime::new()?;
+    // For multiple accessions
     runtime.block_on(async {
         // Step 1: Identify URLs with rate limiting
-        let url_results = identify_urls(accessions, input.options).await?;
+        let url_results = identify_urls(accessions, &input.options).await?;
 
         // Step 2: Download files concurrently
         let mp = MultiProgress::new();
-        let mut downloads = FuturesUnordered::new();
+
+        // For HTTPS downloads, we can use FuturesUnordered for full concurrency
+        let mut https_downloads = FuturesUnordered::new();
+
+        // For GCP downloads, we'll use a separate Vec since gsutil has its own concurrency management
+        let mut gcp_downloads = Vec::new();
 
         for (accession, url_result) in url_results {
             match url_result {
@@ -203,7 +255,32 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
                     let pb = mp.add(ProgressBar::new(0));
                     pb.set_message(format!("Downloading {}", accession));
 
-                    downloads.push(download_url(url, path, pb));
+                    match input.options.provider {
+                        Provider::Https => {
+                            https_downloads.push(download_url(url, path, pb));
+                        }
+                        Provider::Gcp => {
+                            let project_id = match &input.options.gcp_project_id {
+                                Some(id) => id.to_string(),
+                                None => {
+                                    eprintln!(
+                                        "Error for accession {}: GCP project ID is required",
+                                        accession
+                                    );
+                                    continue;
+                                }
+                            };
+                            // We'll collect GCP downloads and process them separately
+                            gcp_downloads.push((url, path, project_id, pb));
+                        }
+                        _ => {
+                            eprintln!(
+                                "Error for accession {}: Unsupported provider: {:?}",
+                                accession, input.options.provider
+                            );
+                            continue;
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("Error for accession {}: {}", accession, e);
@@ -211,13 +288,85 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
             }
         }
 
-        // Process all downloads concurrently
-        while let Some(result) = downloads.next().await {
+        // Process HTTPS downloads concurrently
+        while let Some(result) = https_downloads.next().await {
             if let Err(e) = result {
                 eprintln!("Download error: {}", e);
+            }
+        }
+
+        // Process GCP downloads - since gsutil has its own concurrency management,
+        // we'll run them sequentially to avoid overwhelming the terminal output
+        for (url, path, project_id, pb) in gcp_downloads {
+            if let Err(e) = download_url_gcp(url, path, project_id, pb).await {
+                eprintln!("GCP download error: {}", e);
             }
         }
 
         Ok(())
     })
 }
+
+// pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
+//     let accessions = input.accession_set();
+
+//     if accessions.is_empty() {
+//         bail!("No accessions provided");
+//     }
+
+//     // For a single accession, use the original blocking approach
+//     if accessions.len() == 1 {
+//         let url = identify_url(&accessions[0], input.options)?;
+//         let path = match output_dir {
+//             Some(dir) => format!("{}/{}.sra", dir, &accessions[0]),
+//             None => format!("{}.sra", &accessions[0]),
+//         };
+
+//         let runtime = tokio::runtime::Runtime::new()?;
+//         runtime.block_on(async {
+//             let pb = ProgressBar::new(0);
+//             download_url(url, path, pb).await
+//         })?;
+
+//         return Ok(());
+//     }
+
+//     // For multiple accessions, use the rate-limited approach
+//     let runtime = tokio::runtime::Runtime::new()?;
+//     runtime.block_on(async {
+//         // Step 1: Identify URLs with rate limiting
+//         let url_results = identify_urls(accessions, input.options).await?;
+
+//         // Step 2: Download files concurrently
+//         let mp = MultiProgress::new();
+//         let mut downloads = FuturesUnordered::new();
+
+//         for (accession, url_result) in url_results {
+//             match url_result {
+//                 Ok(url) => {
+//                     let path = match output_dir {
+//                         Some(dir) => format!("{}/{}.sra", dir, accession),
+//                         None => format!("{}.sra", accession),
+//                     };
+
+//                     let pb = mp.add(ProgressBar::new(0));
+//                     pb.set_message(format!("Downloading {}", accession));
+
+//                     downloads.push(download_url(url, path, pb));
+//                 }
+//                 Err(e) => {
+//                     eprintln!("Error for accession {}: {}", accession, e);
+//                 }
+//             }
+//         }
+
+//         // Process all downloads concurrently
+//         while let Some(result) = downloads.next().await {
+//             if let Err(e) = result {
+//                 eprintln!("Download error: {}", e);
+//             }
+//         }
+
+//         Ok(())
+//     })
+// }

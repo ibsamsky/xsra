@@ -24,13 +24,13 @@ fn calculate_average_quality(qual: &[u8]) -> f64 {
     total_score as f64 / qual.len() as f64
 }
 
-pub fn describe(input: &InputOptions, opts: DescribeOptions) -> Result<()> {
+pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
     let accession = if !Path::new(&input.accession).exists() {
         eprintln!(
             "Identifying SRA data URL for Accession: {}",
             &input.accession
         );
-        let url = identify_url(&input.accession, input.options)?;
+        let url = identify_url(&input.accession, &input.options)?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
