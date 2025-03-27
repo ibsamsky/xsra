@@ -60,7 +60,7 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
         options.provider,
     ) {
         match options.provider {
-            Provider::Https => Ok(url),
+            Provider::Https | Provider::Gcp => Ok(url),
             _ => {
                 bail!(
                     "Identified the {}-URL, but cannot currently proceed: {url}",
