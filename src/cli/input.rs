@@ -31,7 +31,7 @@ impl MultiInputOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, Parser)]
+#[derive(Debug, Clone, Parser)]
 #[clap(next_help_heading = "ACCESSION OPTIONS")]
 pub struct AccessionOptions {
     /// Only download an SRA with complete quality scores
@@ -43,6 +43,10 @@ pub struct AccessionOptions {
     /// URL provider
     #[clap(short = 'P', long, default_value = "https")]
     pub provider: Provider,
+
+    /// GCP project ID
+    #[clap(short = 'G', long, required_if_eq("provider", "gcp"))]
+    pub gcp_project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

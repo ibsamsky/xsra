@@ -24,7 +24,7 @@ fn main() -> Result<()> {
             &args.output,
             args.filter,
         ),
-        cli::Command::Describe(args) => describe(&args.input, args.options),
+        cli::Command::Describe(args) => describe(&args.input, &args.options),
         cli::Command::Prefetch(args) => prefetch(&args.input, args.output.as_deref()),
     }
 }
