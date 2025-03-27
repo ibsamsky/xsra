@@ -175,7 +175,7 @@ async fn download_url_gcp(
     // Prepare the gsutil command
     let mut cmd = std::process::Command::new("gsutil");
     cmd.arg("-u")
-        .arg(format!("-p={}", project_id))
+        .arg(project_id)
         .arg("cp")
         .arg(&url)
         .arg(&path)
