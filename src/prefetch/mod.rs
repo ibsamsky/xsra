@@ -174,9 +174,9 @@ async fn download_url_gcp(
 
     // Prepare the gsutil command
     let mut cmd = std::process::Command::new("gsutil");
-    cmd.arg("cp")
-        .arg("-u")
+    cmd.arg("-u")
         .arg(format!("-p={}", project_id))
+        .arg("cp")
         .arg(&url)
         .arg(&path)
         // Use inherit to show gsutil's own progress bar in the terminal
