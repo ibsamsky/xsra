@@ -16,6 +16,29 @@ use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 /// Semaphore for rate limiting
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
 
+/// Maximum number of retries for rate limiting
+const MAX_RETRIES: usize = 3;
+
+/// Base delay between retries in milliseconds (will be increased with backoff)
+const BASE_RETRY_DELAY_MS: usize = 500;
+
+/// Checks if the response from NCBI indicates rate limiting
+fn is_rate_limited(response: &str) -> bool {
+    // Check for the specific JSON rate limit response
+    if response.contains("API rate limit exceeded") {
+        return true;
+    }
+
+    // Check if response is a JSON error with rate limit indicators
+    if response.starts_with("{")
+        && (response.contains("rate limit") || response.contains("limit exceeded"))
+    {
+        return true;
+    }
+
+    false
+}
+
 pub fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
@@ -52,28 +75,57 @@ pub fn parse_url(
 }
 
 pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<String> {
-    let entrez_response = query_entrez(accession)?;
-    if let Some(url) = parse_url(
-        accession,
-        &entrez_response,
-        options.full_quality,
-        options.provider,
-    ) {
-        match options.provider {
-            Provider::Https | Provider::Gcp => Ok(url),
-            _ => {
-                bail!(
-                    "Identified the {}-URL, but cannot currently proceed: {url}",
-                    options.provider,
-                );
-            }
+    let mut retry_count = 0;
+
+    loop {
+        // Break the loop if we've reached max retries
+        if retry_count >= MAX_RETRIES {
+            break;
         }
-    } else {
-        bail!("Unable to identify a download URL for accession: <{accession}> with full_quality={} and provider={}",
+
+        let entrez_response = query_entrez(accession)?;
+
+        // Check if we're being rate limited
+        if is_rate_limited(&entrez_response) {
+            retry_count += 1;
+            let delay = BASE_RETRY_DELAY_MS + (retry_count * BASE_RETRY_DELAY_MS);
+            eprintln!(
+                "Rate limit detected for accession {}, retrying in {}ms (attempt {}/{})",
+                accession, delay, retry_count, MAX_RETRIES
+            );
+
+            // Use std::thread::sleep for synchronous sleep
+            std::thread::sleep(std::time::Duration::from_millis(delay as u64));
+            continue;
+        }
+
+        // If we have a valid response, try to parse the URL
+        if let Some(url) = parse_url(
+            accession,
+            &entrez_response,
             options.full_quality,
             options.provider,
-        )
+        ) {
+            match options.provider {
+                Provider::Https | Provider::Gcp => return Ok(url),
+                _ => {
+                    bail!(
+                        "Identified the {}-URL, but cannot currently proceed: {url}",
+                        options.provider,
+                    );
+                }
+            }
+        } else {
+            // If we can't parse a URL, break out of the loop to return the error
+            break;
+        }
     }
+
+    // If we've exhausted retries or couldn't parse a URL, return an error
+    bail!("Unable to identify a download URL for accession: <{accession}> with full_quality={} and provider={}",
+        options.full_quality,
+        options.provider,
+    )
 }
 
 // Rate-limited version that processes multiple accessions by calling identify_url
