@@ -10,6 +10,6 @@ pub struct PrefetchArgs {
     /// Path to write the .sra file to
     ///
     /// default: './<accession>.sra'
-    #[clap(short, long, next_help_heading = "OUTPUT OPTIONS")]
+    #[clap(short, long, help_heading = "OUTPUT OPTIONS")]
     pub output: Option<String>,
 }
