@@ -13,8 +13,25 @@ use tokio::{sync::Semaphore, time::sleep};
 
 use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 
-/// Semaphore for rate limiting
+/// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
+
+/// Checks if the response from NCBI indicates rate limiting
+fn is_rate_limited(response: &str) -> bool {
+    // Check for the specific JSON rate limit response
+    if response.contains("API rate limit exceeded") {
+        return true;
+    }
+
+    // Check if response is a JSON error with rate limit indicators
+    if response.starts_with("{")
+        && (response.contains("rate limit") || response.contains("limit exceeded"))
+    {
+        return true;
+    }
+
+    false
+}
 
 pub fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
@@ -52,28 +69,57 @@ pub fn parse_url(
 }
 
 pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<String> {
-    let entrez_response = query_entrez(accession)?;
-    if let Some(url) = parse_url(
-        accession,
-        &entrez_response,
-        options.full_quality,
-        options.provider,
-    ) {
-        match options.provider {
-            Provider::Https | Provider::Gcp => Ok(url),
-            _ => {
-                bail!(
-                    "Identified the {}-URL, but cannot currently proceed: {url}",
-                    options.provider,
-                );
-            }
+    let mut retry_count = 0;
+
+    loop {
+        // Break the loop if we've reached max retries
+        if retry_count >= options.retry_limit {
+            break;
         }
-    } else {
-        bail!("Unable to identify a download URL for accession: <{accession}> with full_quality={} and provider={}",
+
+        let entrez_response = query_entrez(accession)?;
+
+        // Check if we're being rate limited
+        if is_rate_limited(&entrez_response) {
+            let delay = options.retry_delay + (retry_count * options.retry_delay);
+            eprintln!(
+                "Rate limit detected for accession {}, retrying in {}ms (attempt {}/{})",
+                accession, delay, retry_count, options.retry_limit
+            );
+
+            // Use std::thread::sleep for synchronous sleep
+            std::thread::sleep(std::time::Duration::from_millis(delay as u64));
+            retry_count += 1;
+            continue;
+        }
+
+        // If we have a valid response, try to parse the URL
+        if let Some(url) = parse_url(
+            accession,
+            &entrez_response,
             options.full_quality,
             options.provider,
-        )
+        ) {
+            match options.provider {
+                Provider::Https | Provider::Gcp => return Ok(url),
+                _ => {
+                    bail!(
+                        "Identified the {}-URL, but cannot currently proceed: {url}",
+                        options.provider,
+                    );
+                }
+            }
+        } else {
+            // If we can't parse a URL, break out of the loop to return the error
+            break;
+        }
     }
+
+    // If we've exhausted retries or couldn't parse a URL, return an error
+    bail!("Unable to identify a download URL for accession: <{accession}> with full_quality={} and provider={}",
+        options.full_quality,
+        options.provider,
+    )
 }
 
 // Rate-limited version that processes multiple accessions by calling identify_url
@@ -306,67 +352,3 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
         Ok(())
     })
 }
-
-// pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
-//     let accessions = input.accession_set();
-
-//     if accessions.is_empty() {
-//         bail!("No accessions provided");
-//     }
-
-//     // For a single accession, use the original blocking approach
-//     if accessions.len() == 1 {
-//         let url = identify_url(&accessions[0], input.options)?;
-//         let path = match output_dir {
-//             Some(dir) => format!("{}/{}.sra", dir, &accessions[0]),
-//             None => format!("{}.sra", &accessions[0]),
-//         };
-
-//         let runtime = tokio::runtime::Runtime::new()?;
-//         runtime.block_on(async {
-//             let pb = ProgressBar::new(0);
-//             download_url(url, path, pb).await
-//         })?;
-
-//         return Ok(());
-//     }
-
-//     // For multiple accessions, use the rate-limited approach
-//     let runtime = tokio::runtime::Runtime::new()?;
-//     runtime.block_on(async {
-//         // Step 1: Identify URLs with rate limiting
-//         let url_results = identify_urls(accessions, input.options).await?;
-
-//         // Step 2: Download files concurrently
-//         let mp = MultiProgress::new();
-//         let mut downloads = FuturesUnordered::new();
-
-//         for (accession, url_result) in url_results {
-//             match url_result {
-//                 Ok(url) => {
-//                     let path = match output_dir {
-//                         Some(dir) => format!("{}/{}.sra", dir, accession),
-//                         None => format!("{}.sra", accession),
-//                     };
-
-//                     let pb = mp.add(ProgressBar::new(0));
-//                     pb.set_message(format!("Downloading {}", accession));
-
-//                     downloads.push(download_url(url, path, pb));
-//                 }
-//                 Err(e) => {
-//                     eprintln!("Error for accession {}: {}", accession, e);
-//                 }
-//             }
-//         }
-
-//         // Process all downloads concurrently
-//         while let Some(result) = downloads.next().await {
-//             if let Err(e) = result {
-//                 eprintln!("Download error: {}", e);
-//             }
-//         }
-
-//         Ok(())
-//     })
-// }
