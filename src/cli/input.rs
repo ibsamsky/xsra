@@ -47,6 +47,14 @@ pub struct AccessionOptions {
     /// GCP project ID
     #[clap(short = 'G', long, required_if_eq("provider", "gcp"))]
     pub gcp_project_id: Option<String>,
+
+    /// Maximum number of retries on request limiting before bailing out
+    #[clap(long, default_value = "5")]
+    pub retry_limit: usize,
+
+    /// Delay in milliseconds between retries
+    #[clap(long, default_value = "500")]
+    pub retry_delay: usize,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

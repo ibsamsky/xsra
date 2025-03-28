@@ -16,12 +16,6 @@ use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
 
-/// Maximum number of retries for rate limiting
-const MAX_RETRIES: usize = 5;
-
-/// Base delay between retries in milliseconds (will be increased with backoff)
-const BASE_RETRY_DELAY_MS: usize = 500;
-
 /// Checks if the response from NCBI indicates rate limiting
 fn is_rate_limited(response: &str) -> bool {
     // Check for the specific JSON rate limit response
@@ -79,7 +73,7 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
 
     loop {
         // Break the loop if we've reached max retries
-        if retry_count >= MAX_RETRIES {
+        if retry_count >= options.retry_limit {
             break;
         }
 
@@ -87,10 +81,10 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
 
         // Check if we're being rate limited
         if is_rate_limited(&entrez_response) {
-            let delay = BASE_RETRY_DELAY_MS + (retry_count * BASE_RETRY_DELAY_MS);
+            let delay = options.retry_delay + (retry_count * options.retry_delay);
             eprintln!(
                 "Rate limit detected for accession {}, retrying in {}ms (attempt {}/{})",
-                accession, delay, retry_count, MAX_RETRIES
+                accession, delay, retry_count, options.retry_limit
             );
 
             // Use std::thread::sleep for synchronous sleep
