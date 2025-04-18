@@ -12,12 +12,14 @@ mod filter;
 mod input;
 mod prefetch;
 mod recode;
+mod runtime;
 pub use describe::{DescribeArgs, DescribeOptions};
 pub use dump::{DumpArgs, DumpOutput, OutputFormat};
 pub use filter::FilterOptions;
 pub use input::{AccessionOptions, InputOptions, MultiInputOptions, Provider};
 pub use prefetch::PrefetchArgs;
 pub use recode::{BinseqFlavor, RecodeArgs};
+pub use runtime::RuntimeOptions;
 
 // Configures Clap v3-style help menu colors
 const STYLES: Styles = Styles::styled()

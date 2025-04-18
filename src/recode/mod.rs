@@ -36,14 +36,14 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
             &args.output.name(),
             args.primary_sid(),
             args.extended_sid(),
-            args.threads(),
+            args.runtime.threads(),
         ),
         BinseqFlavor::VBinseq => recode_to_vbinseq(
             &accession,
             &args.output.name(),
             args.primary_sid(),
             args.extended_sid(),
-            args.threads(),
+            args.runtime.threads(),
         ),
     }
 }

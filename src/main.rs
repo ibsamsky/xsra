@@ -23,7 +23,7 @@ fn main() -> Result<()> {
     match args.command {
         cli::Command::Dump(args) => dump(
             &args.input,
-            args.threads() as u64,
+            args.runtime.threads(),
             &args.output,
             args.filter,
         ),

@@ -1,4 +1,4 @@
-use super::InputOptions;
+use super::{InputOptions, RuntimeOptions};
 use anyhow::{bail, Result};
 use clap::Parser;
 
@@ -10,8 +10,8 @@ pub struct RecodeArgs {
     #[clap(flatten)]
     pub selection: SelectionOptions,
 
-    #[clap(short = 'T', long, default_value_t = 1)]
-    threads: u64,
+    #[clap(flatten)]
+    pub runtime: RuntimeOptions,
 
     #[clap(flatten)]
     pub output: RecodeOutput,
@@ -20,18 +20,10 @@ impl RecodeArgs {
     pub fn validate(&self) -> Result<()> {
         match &self.selection.include.len() {
             0 => bail!(
-                "Recoding requires specifying which spot segments to use (see help for commands)"
+                "Recoding requires including at least one spot segment (see 'xsra recode --help' for usage)"
             ),
             1 | 2 => Ok(()),
-            _ => bail!("Recoding can only use one or two spot segments"),
-        }
-    }
-
-    pub fn threads(&self) -> u64 {
-        if self.threads == 0 {
-            num_cpus::get() as u64
-        } else {
-            self.threads.min(num_cpus::get() as u64)
+            _ => bail!("Recoding can only include one or two spot segments"),
         }
     }
 
@@ -61,7 +53,9 @@ pub struct SelectionOptions {
     #[clap(short = 'l', long)]
     pub limit: Option<usize>,
 
-    /// Include specific segments (zero-indexed)
+    /// Include specific segments (zero-indexed) as CSV
+    ///
+    /// I.e. to include the first and third segments, use "-I 0,2".
     ///
     /// The first entry is the primary spot segment, and the second entry is the extended spot segment.
     #[clap(short = 'I', long, num_args = 1..=2, value_delimiter = ',')]

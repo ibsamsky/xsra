@@ -1,8 +1,7 @@
 use crate::output::Compression;
 use clap::Parser;
 
-use super::filter::FilterOptions;
-use super::input::InputOptions;
+use super::{FilterOptions, InputOptions, RuntimeOptions};
 
 #[derive(Parser, Debug)]
 pub struct DumpArgs {
@@ -16,16 +15,7 @@ pub struct DumpArgs {
     pub output: DumpOutput,
 
     #[clap(flatten)]
-    runtime: DumpRuntime,
-}
-impl DumpArgs {
-    pub fn threads(&self) -> usize {
-        if self.runtime.threads == 0 {
-            num_cpus::get()
-        } else {
-            self.runtime.threads.min(num_cpus::get())
-        }
-    }
+    pub runtime: RuntimeOptions,
 }
 
 #[derive(Parser, Debug)]
@@ -64,16 +54,6 @@ pub struct DumpOutput {
     /// By default empty files will be deleted
     #[clap(short = 'E', long)]
     pub keep_empty: bool,
-}
-
-#[derive(Parser, Debug)]
-#[clap(next_help_heading = "RUNTIME OPTIONS")]
-pub struct DumpRuntime {
-    /// Number of threads to use
-    ///
-    /// [0: all available cores]
-    #[clap(short = 'T', long, default_value = "8")]
-    threads: usize,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
