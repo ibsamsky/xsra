@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use binseq::{BinseqHeader, BinseqWriterBuilder, Policy};
 use ncbi_vdb::SraReader;
 use parking_lot::Mutex;
+use vbinseq::{VBinseqHeader, VBinseqWriterBuilder};
 
 use crate::cli::{BinseqFlavor, RecodeArgs};
 use crate::describe::describe_inner;
@@ -118,6 +119,96 @@ fn recode_to_binseq(
     Ok(())
 }
 
+fn recode_to_vbinseq(
+    accession: &str,
+    output_path: &str,
+    primary_sid: usize,
+    extended_sid: Option<usize>,
+    num_threads: u64,
+) -> Result<()> {
+    let output = File::create(output_path).map(BufWriter::new)?;
+    let header = if extended_sid.is_some() {
+        VBinseqHeader::new(true, true, true)
+    } else {
+        VBinseqHeader::new(true, true, false)
+    };
+    let policy = vbinseq::Policy::RandomDraw;
+    let g_writer = VBinseqWriterBuilder::default()
+        .header(header)
+        .policy(policy)
+        .build(output)?;
+    let g_writer = Arc::new(Mutex::new(g_writer));
+
+    let num_records = get_num_records(accession)?;
+    let records_per_thread = num_records / num_threads;
+    let remainder = num_records % num_threads;
+
+    let mut handles = Vec::new();
+    for tid in 0..num_threads {
+        let start = (tid * records_per_thread) + 1; // 1-indexed
+        let stop = if tid == num_threads - 1 {
+            start + records_per_thread + remainder - 1
+        } else {
+            start + records_per_thread - 1
+        };
+        let t_accession = accession.to_string();
+        let mut t_writer = VBinseqWriterBuilder::default()
+            .header(header)
+            .headless(true)
+            .policy(policy)
+            .build(Vec::new())?;
+        let g_writer = g_writer.clone();
+
+        let handle = std::thread::spawn(move || -> Result<()> {
+            let reader = SraReader::new(&t_accession)?;
+
+            for (iter_index, record) in reader.into_range_iter(start as i64, stop)?.enumerate() {
+                let record = record?;
+                if let Some(extended_sid) = extended_sid {
+                    let primary_seg = record.get_segment(primary_sid).unwrap();
+                    let extended_seg = record.get_segment(extended_sid).unwrap();
+                    t_writer.write_nucleotides_quality_paired(
+                        0,
+                        primary_seg.seq(),
+                        extended_seg.seq(),
+                        primary_seg.qual(),
+                        extended_seg.qual(),
+                    )?;
+                } else {
+                    let primary_seg = record.get_segment(primary_sid).unwrap();
+                    t_writer.write_nucleotides_quality(0, primary_seg.seq(), primary_seg.qual())?;
+                }
+
+                // Process records at a constant interval
+                if iter_index % THREAD_UPDATE_INTERVAL == 0 {
+                    {
+                        let mut global = g_writer.lock();
+                        global.ingest(&mut t_writer)?;
+                    }
+                }
+            }
+
+            // Process the last batch of records
+            {
+                let mut global = g_writer.lock();
+                global.ingest(&mut t_writer)?;
+            }
+
+            Ok(())
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap().unwrap();
+    }
+
+    g_writer.lock().finish()?;
+
+    Ok(())
+}
+
 pub fn recode(args: &RecodeArgs) -> Result<()> {
     args.validate()?;
     let accession = if !Path::new(&args.input.accession).exists() {
@@ -132,11 +223,6 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
         args.input.accession.to_string()
     };
 
-    println!("Including primary segment: {}", args.primary_sid());
-    if let Some(ext) = args.extended_sid() {
-        println!("Including extended segment: {}", ext);
-    }
-
     match args.output.flavor {
         BinseqFlavor::Binseq => recode_to_binseq(
             &accession,
@@ -145,6 +231,12 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
             args.extended_sid(),
             args.threads(),
         ),
-        _ => unimplemented!(),
+        BinseqFlavor::VBinseq => recode_to_vbinseq(
+            &accession,
+            &args.output.name(),
+            args.primary_sid(),
+            args.extended_sid(),
+            args.threads(),
+        ),
     }
 }
