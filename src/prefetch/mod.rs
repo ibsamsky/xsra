@@ -178,7 +178,7 @@ pub async fn identify_urls(
 
 /// Download a file from a URL asynchronously
 async fn download_url(url: String, path: String, pb: ProgressBar) -> Result<()> {
-    let filename = url.split('/').last().unwrap_or("");
+    let filename = url.split('/').next_back().unwrap_or("");
     let client = reqwest::Client::new()
         .get(&url)
         .send()
@@ -212,7 +212,7 @@ async fn download_url_gcp(
     project_id: String,
     pb: ProgressBar,
 ) -> Result<()> {
-    let filename = url.split('/').last().unwrap_or("");
+    let filename = url.split('/').next_back().unwrap_or("");
     pb.set_message(format!("GCP: {}", filename));
 
     // Set indeterminate progress style - we'll let gsutil show its own progress
