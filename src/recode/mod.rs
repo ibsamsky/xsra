@@ -16,6 +16,38 @@ use crate::utils::get_num_records;
 
 const THREAD_UPDATE_INTERVAL: usize = 1024;
 
+pub fn recode(args: &RecodeArgs) -> Result<()> {
+    args.validate()?;
+    let accession = if !Path::new(&args.input.accession).exists() {
+        eprintln!(
+            "Identifying SRA data URL for Accession: {}",
+            &args.input.accession
+        );
+        let url = identify_url(&args.input.accession, &args.input.options)?;
+        eprintln!("Streaming SRA records from URL: {}", url);
+        url
+    } else {
+        args.input.accession.to_string()
+    };
+
+    match args.output.flavor {
+        BinseqFlavor::Binseq => recode_to_binseq(
+            &accession,
+            &args.output.name(),
+            args.primary_sid(),
+            args.extended_sid(),
+            args.threads(),
+        ),
+        BinseqFlavor::VBinseq => recode_to_vbinseq(
+            &accession,
+            &args.output.name(),
+            args.primary_sid(),
+            args.extended_sid(),
+            args.threads(),
+        ),
+    }
+}
+
 fn recode_to_binseq(
     accession: &str,
     output_path: &str,
@@ -207,36 +239,4 @@ fn recode_to_vbinseq(
     g_writer.lock().finish()?;
 
     Ok(())
-}
-
-pub fn recode(args: &RecodeArgs) -> Result<()> {
-    args.validate()?;
-    let accession = if !Path::new(&args.input.accession).exists() {
-        eprintln!(
-            "Identifying SRA data URL for Accession: {}",
-            &args.input.accession
-        );
-        let url = identify_url(&args.input.accession, &args.input.options)?;
-        eprintln!("Streaming SRA records from URL: {}", url);
-        url
-    } else {
-        args.input.accession.to_string()
-    };
-
-    match args.output.flavor {
-        BinseqFlavor::Binseq => recode_to_binseq(
-            &accession,
-            &args.output.name(),
-            args.primary_sid(),
-            args.extended_sid(),
-            args.threads(),
-        ),
-        BinseqFlavor::VBinseq => recode_to_vbinseq(
-            &accession,
-            &args.output.name(),
-            args.primary_sid(),
-            args.extended_sid(),
-            args.threads(),
-        ),
-    }
 }
