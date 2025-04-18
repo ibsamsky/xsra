@@ -15,8 +15,9 @@ use crate::output::{build_local_buffers, build_path_name, build_writers};
 use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
 
+use crate::utils::get_num_records;
 use stats::ProcessStatistics;
-use utils::{get_num_records, write_segment_to_buffer_set};
+use utils::write_segment_to_buffer_set;
 
 fn launch_threads<W: Write + Send + 'static>(
     path: &str,

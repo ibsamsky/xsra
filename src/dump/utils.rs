@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use anyhow::{bail, Result};
-use ncbi_vdb::{Segment, SraReader};
+use ncbi_vdb::Segment;
 
 use crate::cli::OutputFormat;
 
@@ -46,9 +46,4 @@ pub fn write_fasta<W: Write>(wtr: &mut W, segment: &Segment<'_>) -> Result<()> {
     wtr.write_all(segment.seq())?;
     writeln!(wtr)?;
     Ok(())
-}
-
-pub fn get_num_records(path: &str) -> Result<u64> {
-    let reader = SraReader::new(path)?;
-    Ok(reader.stop())
 }
