@@ -1,4 +1,4 @@
-use super::{FilterOptions, InputOptions};
+use super::InputOptions;
 use anyhow::{bail, Result};
 use clap::Parser;
 
@@ -8,7 +8,7 @@ pub struct RecodeArgs {
     pub input: InputOptions,
 
     #[clap(flatten)]
-    pub filter: FilterOptions,
+    pub selection: SelectionOptions,
 
     #[clap(short = 'T', long, default_value_t = 1)]
     threads: u64,
@@ -18,7 +18,7 @@ pub struct RecodeArgs {
 }
 impl RecodeArgs {
     pub fn validate(&self) -> Result<()> {
-        match &self.filter.include.len() {
+        match &self.selection.include.len() {
             0 => bail!(
                 "Recoding requires specifying which spot segments to use (see help for commands)"
             ),
@@ -36,16 +36,16 @@ impl RecodeArgs {
     }
 
     pub fn paired(&self) -> bool {
-        self.filter.include.len() == 2
+        self.selection.include.len() == 2
     }
 
     pub fn primary_sid(&self) -> usize {
-        self.filter.include[0]
+        self.selection.include[0]
     }
 
     pub fn extended_sid(&self) -> Option<usize> {
         if self.paired() {
-            Some(self.filter.include[1])
+            Some(self.selection.include[1])
         } else {
             None
         }
@@ -53,6 +53,23 @@ impl RecodeArgs {
 }
 
 #[derive(Parser, Debug)]
+#[clap(next_help_heading = "Selection Options")]
+pub struct SelectionOptions {
+    /// Only process up to N spots
+    ///
+    /// Note: This is not the number of individual segments, but rather the number of spots (or records) to process.
+    #[clap(short = 'l', long)]
+    pub limit: Option<usize>,
+
+    /// Include specific segments (zero-indexed)
+    ///
+    /// The first entry is the primary spot segment, and the second entry is the extended spot segment.
+    #[clap(short = 'I', long, num_args = 1..=2, value_delimiter = ',')]
+    pub include: Vec<usize>,
+}
+
+#[derive(Parser, Debug)]
+#[clap(next_help_heading = "Output Options")]
 pub struct RecodeOutput {
     /// BINSEQ output name (default: "output.{bq,vbq}")
     #[clap(short, long)]
