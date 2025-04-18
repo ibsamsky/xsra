@@ -24,23 +24,12 @@ fn calculate_average_quality(qual: &[u8]) -> f64 {
     total_score as f64 / qual.len() as f64
 }
 
-pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
-    let accession = if !Path::new(&input.accession).exists() {
-        eprintln!(
-            "Identifying SRA data URL for Accession: {}",
-            &input.accession
-        );
-        let url = identify_url(&input.accession, &input.options)?;
-        eprintln!("Streaming SRA records from URL: {}", url);
-        url
-    } else {
-        input.accession.to_string()
-    };
-    let reader = SraReader::new(&accession)?;
+pub fn describe_inner(accession: &str, skip: usize, limit: usize) -> Result<DescribeStats> {
+    let reader = SraReader::new(accession)?;
     let num_spots = reader.stop();
 
-    let l_bound = opts.skip.max(1);
-    let r_bound = (l_bound + opts.limit).min(num_spots as usize);
+    let l_bound = skip.max(1);
+    let r_bound = (l_bound + limit).min(num_spots as usize);
 
     let mut num_segments = 0;
     let mut segment_types = Vec::new();
@@ -75,6 +64,23 @@ pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
         r_bound,
         num_spots as usize,
     );
+
+    Ok(stats)
+}
+
+pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
+    let accession = if !Path::new(&input.accession).exists() {
+        eprintln!(
+            "Identifying SRA data URL for Accession: {}",
+            &input.accession
+        );
+        let url = identify_url(&input.accession, &input.options)?;
+        eprintln!("Streaming SRA records from URL: {}", url);
+        url
+    } else {
+        input.accession.to_string()
+    };
+    let stats = describe_inner(&accession, opts.skip, opts.limit)?;
     stats.pprint(&mut std::io::stdout())?;
 
     Ok(())

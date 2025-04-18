@@ -14,8 +14,8 @@ However, it is not a complete feature-for-feature replacement, and some function
 
 ## Features
 
-- Multi-threaded extraction of FASTQ records
-- Optional compression of output files
+- Multi-threaded extraction to FASTA, FASTQ, [BINSEQ](https://github.com/arcinstitute/binseq), and [VBINSEQ](https://github.com/arcinstitute/vbinseq) records.
+- Optional compression of output files (FASTA, FASTQ)
   - gzip
   - bgzip
   - zstd
@@ -73,6 +73,20 @@ xsra describe <ACCESSION>.sra
 
 # Download an accession to disk
 xsra prefetch <ACCESSION>.sra
+```
+
+You can also write [BINSEQ](https://github.com/arcinstitute/binseq) and [VBINSEQ](https://github.com/arcinstitute/vbinseq) files directly from SRA without an intermediate FASTA or FASTQ file.
+These operations can be done with multiple threads for faster processing as well (following same arguments as above).
+
+```bash
+# Write a BINSEQ file to (output.bq) selecting segments 1 and 2 (zero-indexed) as primary and extended.
+xsra recode <ACCESSION>.sra -fb -I 0,1
+
+# Write a BINSEQ file to (output.bq) selecting segment 3 (zero-indexed) as primary.
+xsra recode <ACCESSION>.sra -fb -I 2
+
+# Write a VBINSEQ file to (output.vbq) selecting segments 3 and 1 (zero-indexed) as primary and extended.
+xsra recode <ACCESSION>.sra -fv -I 3,1
 ```
 
 You can also use alternative data providers such as `GCP`.

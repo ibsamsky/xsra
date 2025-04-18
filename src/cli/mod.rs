@@ -11,11 +11,15 @@ mod dump;
 mod filter;
 mod input;
 mod prefetch;
+mod recode;
+mod runtime;
 pub use describe::{DescribeArgs, DescribeOptions};
 pub use dump::{DumpArgs, DumpOutput, OutputFormat};
 pub use filter::FilterOptions;
 pub use input::{AccessionOptions, InputOptions, MultiInputOptions, Provider};
 pub use prefetch::PrefetchArgs;
+pub use recode::{BinseqFlavor, RecodeArgs};
+pub use runtime::RuntimeOptions;
 
 // Configures Clap v3-style help menu colors
 const STYLES: Styles = Styles::styled()
@@ -36,6 +40,10 @@ pub enum Command {
     /// Extract the records of the SRA file and output them as FASTQ
     #[clap(name = "dump")]
     Dump(DumpArgs),
+
+    /// Recode the records of the SRA file as BINSEQ
+    #[clap(name = "recode")]
+    Recode(RecodeArgs),
 
     /// Describe the read segments in the SRA file within a specified limit
     #[clap(name = "describe")]

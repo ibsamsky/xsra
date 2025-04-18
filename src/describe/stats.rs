@@ -97,6 +97,10 @@ impl DescribeStats {
             .collect()
     }
 
+    pub fn segment_lengths(&self) -> Vec<f64> {
+        self.stats.iter().map(|s| s.mean_length).collect()
+    }
+
     pub fn pprint<W: Write>(&self, wtr: &mut W) -> Result<()> {
         serde_json::to_writer_pretty(wtr, self)?;
         Ok(())
