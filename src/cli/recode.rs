@@ -45,7 +45,7 @@ impl RecodeArgs {
 }
 
 #[derive(Parser, Debug)]
-#[clap(next_help_heading = "Selection Options")]
+#[clap(next_help_heading = "SELECTION OPTIONS")]
 pub struct SelectionOptions {
     /// Only process up to N spots
     ///
@@ -63,7 +63,7 @@ pub struct SelectionOptions {
 }
 
 #[derive(Parser, Debug)]
-#[clap(next_help_heading = "Output Options")]
+#[clap(next_help_heading = "OUTPUT OPTIONS")]
 pub struct RecodeOutput {
     /// BINSEQ output name (default: "output.{bq,vbq}")
     #[clap(short, long)]
