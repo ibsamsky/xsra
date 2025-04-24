@@ -4,10 +4,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use binseq::{BinseqHeader, BinseqWriterBuilder, Policy};
+use binseq::{
+    bq::{BinseqHeader, BinseqWriterBuilder},
+    vbq::{VBinseqHeader, VBinseqWriterBuilder},
+    Policy,
+};
 use ncbi_vdb::SraReader;
 use parking_lot::Mutex;
-use vbinseq::{VBinseqHeader, VBinseqWriterBuilder};
 
 use crate::cli::{BinseqFlavor, RecodeArgs};
 use crate::describe::describe_inner;
@@ -164,7 +167,7 @@ fn recode_to_vbinseq(
     } else {
         VBinseqHeader::new(true, true, false)
     };
-    let policy = vbinseq::Policy::RandomDraw;
+    let policy = Policy::RandomDraw;
     let g_writer = VBinseqWriterBuilder::default()
         .header(header)
         .policy(policy)
