@@ -72,6 +72,12 @@ pub struct RecodeOutput {
     /// BINSEQ output flavor
     #[clap(short, long)]
     pub flavor: BinseqFlavor,
+
+    /// VBQ virtual block size (in bytes)
+    ///
+    /// Only used by vbq
+    #[clap(short = 'B', long, value_parser = parse_memory_size, default_value = "128K")]
+    pub block_size: usize,
 }
 impl RecodeOutput {
     pub fn name(&self) -> String {
@@ -97,5 +103,23 @@ impl BinseqFlavor {
             BinseqFlavor::Binseq => "bq",
             BinseqFlavor::VBinseq => "vbq",
         }
+    }
+}
+
+fn parse_memory_size(input: &str) -> Result<usize, String> {
+    let input = input.trim().to_uppercase();
+    let last_char = input.chars().last().unwrap_or('0');
+
+    let (number_str, multiplier) = match last_char {
+        'K' | 'k' => (&input[..input.len() - 1], 1024),
+        'M' | 'm' => (&input[..input.len() - 1], 1024 * 1024),
+        'G' | 'g' => (&input[..input.len() - 1], 1024 * 1024 * 1024),
+        _ if last_char.is_ascii_digit() => (input.as_str(), 1),
+        _ => return Err(format!("Invalid memory size format: {input}")),
+    };
+
+    match number_str.parse::<usize>() {
+        Ok(number) => Ok(number * multiplier),
+        Err(_) => Err(format!("Failed to parse number: {number_str}")),
     }
 }

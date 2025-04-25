@@ -46,6 +46,7 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
             &args.output.name(),
             args.primary_sid(),
             args.extended_sid(),
+            args.output.block_size,
             args.runtime.threads(),
         ),
     }
@@ -159,13 +160,14 @@ fn recode_to_vbinseq(
     output_path: &str,
     primary_sid: usize,
     extended_sid: Option<usize>,
+    block_size: usize,
     num_threads: u64,
 ) -> Result<()> {
     let output = File::create(output_path).map(BufWriter::new)?;
     let header = if extended_sid.is_some() {
-        VBinseqHeader::new(true, true, true)
+        VBinseqHeader::with_capacity(block_size as u64, true, true, true)
     } else {
-        VBinseqHeader::new(true, true, false)
+        VBinseqHeader::with_capacity(block_size as u64, true, true, false)
     };
     let policy = Policy::RandomDraw;
     let g_writer = VBinseqWriterBuilder::default()
