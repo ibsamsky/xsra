@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use ncbi_vdb::{SegmentType, SraReader};
+use ncbi_vdb_sys::{SegmentType, SraReader};
 
 use crate::{
     cli::{DescribeOptions, InputOptions},

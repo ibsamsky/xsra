@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use hashbrown::HashSet;
-use ncbi_vdb::SraReader;
+use ncbi_vdb_sys::SraReader;
 use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, InputOptions, OutputFormat};

@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use anyhow::{bail, Result};
-use ncbi_vdb::Segment;
+use ncbi_vdb_sys::Segment;
 
 use crate::cli::OutputFormat;
 

@@ -9,7 +9,7 @@ use binseq::{
     vbq::{VBinseqHeader, VBinseqWriterBuilder},
     Policy,
 };
-use ncbi_vdb::SraReader;
+use ncbi_vdb_sys::SraReader;
 use parking_lot::Mutex;
 
 use crate::cli::{BinseqFlavor, RecodeArgs};

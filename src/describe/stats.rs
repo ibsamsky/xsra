@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use anyhow::Result;
-use ncbi_vdb::SegmentType;
+use ncbi_vdb_sys::SegmentType;
 use serde::{Serialize, Serializer};
 
 #[derive(Debug)]
