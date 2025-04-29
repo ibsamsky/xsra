@@ -1,6 +1,9 @@
 # xsra
 
-A tool to extract sequences from an SRA archive.
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
+[![Crates.io](https://img.shields.io/crates/d/xsra?color=orange&label=crates.io)](https://crates.io/crates/xsra)
+
+A performant and storage-efficient CLI tool to extract sequences from an SRA archive.
 
 ## Overview
 
