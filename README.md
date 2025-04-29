@@ -1,15 +1,14 @@
 # xsra
 
-A tool to extract FASTQ records from an SRA archive.
+A tool to extract sequences from an SRA archive.
 
 ## Overview
 
-The NCBI Sequence Read Archive (SRA) is a repository of raw sequencing data.
+The NCBI [Sequence Read Archive (SRA)](https://www.ncbi.nlm.nih.gov/sra) is a repository of raw sequencing data.
 The file format used by the SRA is a complicated binary database format that isn't directly readable by most bioinformatics tools.
-This tool makes use of the `ncbi_vdb` c-library to interact with the SRA archive with safe abstractions.
-This means the core functionality of the tool wraps unsafe C, but the majority of the code related to multi-threading, error-handlings, and overall execution is written in Rust.
+This tool makes use of the `ncbi_vdb` c-library through [`ncbi-vdb-sys`](https://github.com/arcinstitute/ncbi-vdb-sys) to interact with the SRA archive with safe abstractions.
 
-This tool is designed to be a fast and more convenient replacement for the `fastq-dump` and `fasterq-dump` tools provided by the NCBI.
+This tool is designed to be a fast, storage-efficient, and more convenient replacement for the `fastq-dump` and `fasterq-dump` tools provided by the NCBI.
 However, it is not a complete feature-for-feature replacement, and some functionality may be missing.
 
 ## Features
@@ -28,7 +27,7 @@ However, it is not a complete feature-for-feature replacement, and some function
 
 ## Limitations
 
-- May not support every possible SRA archive layout
+- May not support every possible SRA archive layout (let us know if you encounter one that fails)
 - Does not support all the options provided by `fastq-dump` or `fasterq-dump`
 - Will not output sequence identifiers in the same format as `fastq-dump` or `fasterq-dump`
 - Spot ordering is not guaranteed to be the same as the SRA archive
@@ -36,6 +35,18 @@ However, it is not a complete feature-for-feature replacement, and some function
 - Installation bundles `ncbi-vdb` source code and builds it as a static library
   - This may not work on all systems
   - The resulting builds will likely be system-specific and the resulting binary may not be portable.
+
+## Installation
+
+You will need to install the rust package manager [`cargo`](https://rustup.rs/) first.
+
+```bash
+# install using cargo
+cargo install xsra
+
+# validate installation
+xsra --help
+```
 
 ## Usage
 
@@ -96,34 +107,6 @@ You will need to provide a project ID.
 ```bash
 xsra prefetch <ACCESSION> -P gcp -G <GCP_PROJECT_ID>
 ```
-
-## Installation
-
-You will need to install rust to use [`cargo`](https://rustup.rs/).
-
-```
-# Clone repo
-git clone https://github.com/arcinstitute/xsra
-cd xsra
-
-# Build and install
-cargo install --path .
-
-# Check that the installation was successful
-xsra --help
-```
-
-While this is in development there are private repository dependencies that exist.
-To have access to these repositories you'll need to inform cargo to use your CLI `ssh` configuration to resolve them.
-
-```bash
-# Run this to set the correct configuration.
-printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
-```
-
-## License
-
-MIT
 
 ## Contributing
 
