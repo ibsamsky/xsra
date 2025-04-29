@@ -3,7 +3,7 @@
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
 [![Crates.io](https://img.shields.io/crates/d/xsra?color=orange&label=crates.io)](https://crates.io/crates/xsra)
 
-A performant and storage-efficient CLI tool to extract sequences from an SRA archive.
+A performant and storage-efficient CLI tool to extract sequences from an SRA archive with support for FASTA, FASTQ, and [BINSEQ](https://github.com/arcinstitute/binseq) outputs.
 
 ## Overview
 
@@ -17,10 +17,7 @@ However, it is not a complete feature-for-feature replacement, and some function
 ## Features
 
 - Multi-threaded extraction to FASTA, FASTQ, and [BINSEQ](https://github.com/arcinstitute/binseq) records.
-- Optional compression of output files (FASTA, FASTQ)
-  - gzip
-  - bgzip
-  - zstd
+- Optional built-in compression of output files (FASTA, FASTQ) - [gzip, bgzip, zstd]
 - Choice of BINSEQ output format (`*.bq` and `*.vbq`)
 - Minimum read length filtering
 - Technical / biological read segment selection
