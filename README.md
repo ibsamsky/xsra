@@ -14,11 +14,12 @@ However, it is not a complete feature-for-feature replacement, and some function
 
 ## Features
 
-- Multi-threaded extraction to FASTA, FASTQ, [BINSEQ](https://github.com/arcinstitute/binseq), and [VBINSEQ](https://github.com/arcinstitute/vbinseq) records.
+- Multi-threaded extraction to FASTA, FASTQ, and [BINSEQ](https://github.com/arcinstitute/binseq) records.
 - Optional compression of output files (FASTA, FASTQ)
   - gzip
   - bgzip
   - zstd
+- Choice of BINSEQ output format (`*.bq` and `*.vbq`)
 - Minimum read length filtering
 - Technical / biological read segment selection
 - Spot subsetting
