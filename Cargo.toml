@@ -2,6 +2,13 @@
 name = "xsra"
 version = "0.2.16"
 edition = "2021"
+license = "MIT"
+authors = ["Noam Teyssier <noam.teyssier@arcinstitute.org>"]
+description = "A performant and storage-efficient CLI tool to extract sequences from an SRA archive with support for FASTA, FASTQ, and BINSEQ outputs."
+repository = "https://github.com/arcinstitute/xsra"
+categories = ["command-line-utilities", "science::bioinformatics"]
+keywords = ["ncbi", "binseq", "SRA", "genomics", "fasterq-dump"]
+
 
 [dependencies]
 anyhow = "1.0.95"
