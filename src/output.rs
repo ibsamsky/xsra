@@ -99,7 +99,9 @@ pub fn build_writers(
             std::fs::create_dir(outdir)?;
         }
 
-        let c_threads = num_threads / 4;
+        // If four or more threads were allocated to `xsra`, use that number divided by four for
+        // compression. If fewer than four total threads were allocated, just set aside one thread.
+        let c_threads = (num_threads / 4).max(1);
         let mut writers = vec![];
         for i in 0..4 {
             let path = build_path_name(outdir, prefix, compression, format, i);
