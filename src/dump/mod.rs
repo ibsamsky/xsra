@@ -189,7 +189,7 @@ pub fn dump(
     // Build writers depending on split requirements
     let writers = if output_opts.split {
         build_writers(
-            Some(&output_opts.outdir),
+            Some((&output_opts.outdir, output_opts.named_pipes)),
             &output_opts.prefix,
             output_opts.compression,
             output_opts.format,

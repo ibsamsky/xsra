@@ -27,6 +27,14 @@ pub struct DumpOutput {
     #[clap(short = 'o', long, default_value = "output")]
     pub outdir: String,
 
+    /// Treat "output" as a filename stem and write output to a named pipe
+    /// named as <output> (for single-end reads) or <output>_1 and <output>_2 for
+    /// paired-end reads.
+    ///
+    /// Only used when splitting read segments to separate files
+    #[clap(short = 'n', long)]
+    pub named_pipes: bool,
+
     /// Output Format
     #[clap(short = 'f', long, default_value = "q")]
     pub format: OutputFormat,
