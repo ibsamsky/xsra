@@ -1,6 +1,6 @@
 [package]
 name = "xsra"
-version = "0.2.17"
+version = "0.2.18"
 edition = "2021"
 license = "MIT"
 authors = ["Noam Teyssier <noam.teyssier@arcinstitute.org>"]
@@ -18,7 +18,7 @@ futures = "0.3.31"
 gzp = "1"
 hashbrown = "0.15.2"
 indicatif = "0.17.11"
-ncbi-vdb-sys = "0.1.4"
+ncbi-vdb-sys = "0.1.5"
 num_cpus = "1.16.0"
 parking_lot = "0.12.3"
 reqwest = { version = "0.12.15", default-features = false, features = [
