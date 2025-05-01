@@ -11,7 +11,7 @@ use ncbi_vdb_sys::SraReader;
 use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, InputOptions, OutputFormat};
-use crate::output::{build_local_buffers, build_path_name, build_writers};
+use crate::output::{build_local_buffers, build_path_name, build_writers, OutputFileType};
 use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
 
@@ -219,11 +219,18 @@ pub fn dump(
 
     // Remove empty files
     if output_opts.split {
+        let wrap = |x| {
+            if output_opts.named_pipes {
+                OutputFileType::NamedPipe(x)
+            } else {
+                OutputFileType::RegularFile(x)
+            }
+        };
         stats.reads_per_segment.iter().enumerate().try_for_each(
             |(seg_id, &count)| -> Result<()> {
                 if count == 0 {
                     let path = build_path_name(
-                        &output_opts.outdir,
+                        wrap(&output_opts.outdir),
                         &output_opts.prefix,
                         output_opts.compression,
                         output_opts.format,

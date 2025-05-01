@@ -38,13 +38,13 @@ impl Compression {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputType<'a> {
+pub enum OutputFileType<'a> {
     RegularFile(&'a str),
     NamedPipe(&'a str),
     StdIO,
 }
 
-impl fmt::Display for OutputType<'_> {
+impl fmt::Display for OutputFileType<'_> {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -55,12 +55,12 @@ impl fmt::Display for OutputType<'_> {
     }
 }
 
-impl<'a> OutputType<'a> {
+impl<'a> OutputFileType<'a> {
     fn sep(&self) -> &str {
         match self {
-            OutputType::RegularFile(_) => "/",
-            OutputType::NamedPipe(_) => ".",
-            OutputType::StdIO => unreachable!("should not happen"),
+            OutputFileType::RegularFile(_) => "/",
+            OutputFileType::NamedPipe(_) => ".",
+            OutputFileType::StdIO => unreachable!("should not happen"),
         }
     }
 }
@@ -89,18 +89,18 @@ fn _create_fifo(path: &Path, mode: mode_t) -> io::Result<()> {
     }
 }
 
-fn writer_from_path(path: OutputType) -> Result<Box<dyn Write + Send>> {
+fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
     match path {
-        OutputType::RegularFile(path) => {
+        OutputFileType::RegularFile(path) => {
             let file = File::create(path)?;
             let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
             Ok(Box::new(writer))
         }
-        OutputType::StdIO => {
+        OutputFileType::StdIO => {
             let writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
             Ok(Box::new(writer))
         }
-        OutputType::NamedPipe(path) => {
+        OutputFileType::NamedPipe(path) => {
             unimplemented!("not yet")
         }
     }
@@ -134,7 +134,7 @@ fn compression_passthrough<W: Write + Send + 'static>(
 }
 
 pub fn build_path_name(
-    outdir: OutputType,
+    outdir: OutputFileType,
     prefix: &str,
     compression: Compression,
     format: OutputFormat,
@@ -168,20 +168,20 @@ pub fn build_writers(
         let mut writers = vec![];
         for i in 0..4 {
             let path = build_path_name(
-                OutputType::RegularFile(&outdir),
+                OutputFileType::RegularFile(&outdir),
                 prefix,
                 compression,
                 format,
                 i,
             );
-            let writer = writer_from_path(OutputType::RegularFile(&path))?;
+            let writer = writer_from_path(OutputFileType::RegularFile(&path))?;
             let writer = compression_passthrough(writer, compression, c_threads)?;
             writers.push(writer);
         }
         Ok(writers)
     } else {
         let mut writers = vec![];
-        let writer = writer_from_path(OutputType::StdIO)?;
+        let writer = writer_from_path(OutputFileType::StdIO)?;
         let writer = compression_passthrough(writer, compression, num_threads)?;
         writers.push(writer);
         Ok(writers)
