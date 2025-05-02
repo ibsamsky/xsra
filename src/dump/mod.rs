@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use hashbrown::HashSet;
 use ncbi_vdb_sys::SraReader;
 use parking_lot::Mutex;
 
@@ -32,7 +31,8 @@ fn launch_threads<W: Write + Send + 'static>(
     let segment_set = if filter_opts.include.is_empty() {
         None
     } else {
-        let set: HashSet<usize> = filter_opts.include.iter().copied().collect();
+        // checking a small vector should be faster than a HashSet
+        let set: Vec<usize> = filter_opts.include.clone();
         Some(set)
     };
 
@@ -194,6 +194,7 @@ pub fn dump(
             output_opts.compression,
             output_opts.format,
             num_threads as usize,
+            &filter_opts,
         )
     } else {
         build_writers(
@@ -202,10 +203,12 @@ pub fn dump(
             output_opts.compression,
             output_opts.format,
             num_threads as usize,
+            &filter_opts,
         )
     }?;
     let shared_writers = Arc::new(Mutex::new(writers));
 
+    let included_segs = filter_opts.include.clone();
     // Launch worker threads
     let stats = launch_threads(
         &accession,
@@ -228,7 +231,13 @@ pub fn dump(
         };
         stats.reads_per_segment.iter().enumerate().try_for_each(
             |(seg_id, &count)| -> Result<()> {
-                if count == 0 {
+                // if included_segs was non-empty, so we are applying a filter
+                // and this segment was not included, then we didn't create a real
+                // file for it.
+                if !included_segs.is_empty() && !included_segs.contains(&seg_id) {
+                    return Ok(());
+                }
+                if count == 0 || output_opts.named_pipes {
                     let path = build_path_name(
                         wrap(&output_opts.outdir),
                         &output_opts.prefix,

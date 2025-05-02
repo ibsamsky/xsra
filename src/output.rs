@@ -1,5 +1,4 @@
 use libc::mode_t;
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
@@ -10,6 +9,7 @@ use gzp::deflate::{Bgzf, Gzip};
 use gzp::par::compress::{ParCompress, ParCompressBuilder};
 use zstd::Encoder;
 
+use crate::cli::FilterOptions;
 use crate::cli::OutputFormat;
 use std::{ffi::CString, io, path::Path};
 
@@ -41,26 +41,26 @@ impl Compression {
 pub enum OutputFileType<'a> {
     RegularFile(&'a str),
     NamedPipe(&'a str),
-    StdIO,
+    StdOut,
 }
 
 impl fmt::Display for OutputFileType<'_> {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::StdIO => write!(f, "stdout"),
+            Self::StdOut => write!(f, "stdout"),
             Self::RegularFile(fname) => write!(f, "{}", fname),
             Self::NamedPipe(fname) => write!(f, "{}", fname),
         }
     }
 }
 
-impl<'a> OutputFileType<'a> {
+impl OutputFileType<'_> {
     fn sep(&self) -> &str {
         match self {
             OutputFileType::RegularFile(_) => "/",
             OutputFileType::NamedPipe(_) => ".",
-            OutputFileType::StdIO => unreachable!("should not happen"),
+            OutputFileType::StdOut => unreachable!("should not happen"),
         }
     }
 }
@@ -76,8 +76,13 @@ impl<'a> OutputFileType<'a> {
 ///
 /// [`mkfifo`]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/mkfifo.html
 /// [`umask`]: https://en.wikipedia.org/wiki/Umask
+#[cfg(target_family = "unix")]
 pub fn create_fifo<P: AsRef<Path>>(path: P, mode: mode_t) -> io::Result<()> {
     _create_fifo(path.as_ref(), mode)
+}
+#[cfg(target_family = "windows")]
+pub fn create_fifo<P: AsRef<Path>>(path: P, mode: mode_t) -> io::Result<()> {
+    panic!("Use of named pipes is not currently supported on Windows");
 }
 fn _create_fifo(path: &Path, mode: mode_t) -> io::Result<()> {
     let path = CString::new(path.as_os_str().as_encoded_bytes())?;
@@ -96,12 +101,15 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
             let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
             Ok(Box::new(writer))
         }
-        OutputFileType::StdIO => {
+        OutputFileType::StdOut => {
             let writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
             Ok(Box::new(writer))
         }
         OutputFileType::NamedPipe(path) => {
-            unimplemented!("not yet")
+            create_fifo(path, 0o644)?;
+            let file = std::fs::OpenOptions::new().write(true).open(path)?;
+            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
+            Ok(Box::new(writer))
         }
     }
 }
@@ -155,6 +163,7 @@ pub fn build_writers(
     compression: Compression,
     format: OutputFormat,
     num_threads: usize,
+    filter_opts: &FilterOptions,
 ) -> Result<Vec<Box<dyn Write + Send>>> {
     if let Some((outdir, is_named_pipe)) = outdir {
         // create directory if it doesn't exist
@@ -167,21 +176,29 @@ pub fn build_writers(
         let c_threads = (num_threads / 4).max(1);
         let mut writers = vec![];
         for i in 0..4 {
-            let path = build_path_name(
-                OutputFileType::RegularFile(&outdir),
-                prefix,
-                compression,
-                format,
-                i,
-            );
-            let writer = writer_from_path(OutputFileType::RegularFile(&path))?;
-            let writer = compression_passthrough(writer, compression, c_threads)?;
-            writers.push(writer);
+            // only create actual writers if we won't filter out this segment anyway
+            if filter_opts.include.is_empty() || filter_opts.include.contains(&i) {
+                let outf = |x| {
+                    if is_named_pipe {
+                        OutputFileType::NamedPipe(x)
+                    } else {
+                        OutputFileType::RegularFile(x)
+                    }
+                };
+                let path = build_path_name(outf(outdir), prefix, compression, format, i);
+                let writer = writer_from_path(outf(&path))?;
+                let writer = compression_passthrough(writer, compression, c_threads)?;
+                writers.push(writer);
+            } else {
+                // otherwise, use the empty writer
+                let empty_writer = Box::new(std::io::empty());
+                writers.push(empty_writer);
+            }
         }
         Ok(writers)
     } else {
         let mut writers = vec![];
-        let writer = writer_from_path(OutputFileType::StdIO)?;
+        let writer = writer_from_path(OutputFileType::StdOut)?;
         let writer = compression_passthrough(writer, compression, num_threads)?;
         writers.push(writer);
         Ok(writers)
