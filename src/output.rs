@@ -113,7 +113,7 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
             let fifo_exists = if std::fs::exists(path)? {
                 let minfo = std::fs::metadata(path)?;
 
-                if cfg!(unix) {
+                if cfg!(target_family = "unix") {
                     if minfo.file_type().is_fifo() {
                         true
                     } else {
