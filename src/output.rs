@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::ValueEnum;
 use gzp::deflate::{Bgzf, Gzip};
 use gzp::par::compress::{ParCompress, ParCompressBuilder};
@@ -11,6 +11,8 @@ use zstd::Encoder;
 
 use crate::cli::FilterOptions;
 use crate::cli::OutputFormat;
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::FileTypeExt;
 use std::{ffi::CString, io, path::Path};
 
 use super::BUFFER_SIZE;
@@ -106,7 +108,32 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
             Ok(Box::new(writer))
         }
         OutputFileType::NamedPipe(path) => {
-            create_fifo(path, 0o644)?;
+            // check if the file already exists and IS a fifo; if so
+            // then open it for writing, otherwise make it.
+            let fifo_exists = if std::fs::exists(path)? {
+                let minfo = std::fs::metadata(path)?;
+
+                if cfg!(unix) {
+                    if minfo.file_type().is_fifo() {
+                        true
+                    } else {
+                        // the file existed but wasn't a fifo
+                        bail!("The file {} existed already, but wasn't a fifo, so it can't be used as a named pipe. Please remove the file or provide a named pipe instead.", path);
+                    }
+                } else {
+                    // the file existed but wasn't a fifo
+                    bail!(
+                        "Named pipes are not supported on non-unix (i.e. non linux/MacOS) systems."
+                    );
+                }
+            } else {
+                false
+            };
+
+            if !fifo_exists {
+                create_fifo(path, 0o644)?;
+            }
+
             let file = std::fs::OpenOptions::new().write(true).open(path)?;
             let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
             Ok(Box::new(writer))

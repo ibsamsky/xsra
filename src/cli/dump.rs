@@ -28,11 +28,10 @@ pub struct DumpOutput {
     pub outdir: String,
 
     /// Treat "output" as a filename stem and write output to a named pipe
-    /// named as <output> (for single-end reads) or <output>_1 and <output>_2 for
-    /// paired-end reads.
+    /// named as <output>.<prefix><segment>.<ext>
     ///
     /// Only used when splitting read segments to separate files
-    #[clap(short = 'n', long)]
+    #[clap(short = 'n', long, requires = "split")]
     pub named_pipes: bool,
 
     /// Output Format
