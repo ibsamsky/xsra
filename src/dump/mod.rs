@@ -35,7 +35,8 @@ fn launch_threads<W: Write + Send + 'static>(
     let segment_set = if filter_opts.include.is_empty() {
         None
     } else {
-        let set: HashSet<usize> = filter_opts.include.iter().copied().collect();
+        // checking a small vector should be faster than a HashSet
+        let set: Vec<usize> = filter_opts.include.clone();
         Some(set)
     };
 
@@ -172,6 +173,9 @@ fn launch_threads_fifo<W: Write + Send + 'static>(
         Some(set)
     };
 
+    // note that right now we will launch async writer threads per output segment
+    // this can mess with the total thread count, so we should think about the best
+    // way to deal with this.
     let (s0, r0): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
     let (s1, r1): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
     let (s2, r2): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
@@ -264,7 +268,6 @@ fn launch_threads_fifo<W: Write + Send + 'static>(
                     // Handle buffer writes at specific intervals
                     if idx > 0 && (idx % RECORD_CAPACITY == 0) {
                         // Lock the writer until all buffers are written
-                        // let mut writer = writer.lock();
                         let mut senders = senders.lock();
                         for ((sender, local_buf), local_count) in senders
                             .iter_mut()
