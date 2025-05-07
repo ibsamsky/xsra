@@ -394,7 +394,7 @@ pub fn dump(
             output_opts.format,
         )?
     } else {
-        launch_threads_fifo(
+        launch_threads(
             &accession,
             num_threads,
             records_per_thread,
