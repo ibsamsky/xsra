@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use clap::ValueEnum;
 use gzp::deflate::{Bgzf, Gzip};
 use gzp::par::compress::{ParCompress, ParCompressBuilder};
+use std::process::Command;
 use zstd::Encoder;
 
 use crate::cli::FilterOptions;
@@ -131,7 +132,17 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
             };
 
             if !fifo_exists {
-                create_fifo(path, 0o644)?;
+                if cfg!(target_family = "unix") {
+                    let status = Command::new("mkfifo").arg(path).status()?;
+                    if !status.success() {
+                        bail!("`mkfifo` command failed with exit status {:#?}", status);
+                    }
+                    //create_fifo(path, 0o644)?;
+                } else {
+                    bail!(
+                        "Named pipes are not supported on non-unix (i.e. non linux/MacOS) systems."
+                    );
+                }
             }
 
             let file = std::fs::OpenOptions::new().write(true).open(path)?;
