@@ -135,8 +135,8 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
             }
 
             let file = std::fs::OpenOptions::new().write(true).open(path)?;
-            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
-            Ok(Box::new(writer))
+            //let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
+            Ok(Box::new(file))
         }
     }
 }

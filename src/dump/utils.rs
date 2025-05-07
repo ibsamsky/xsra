@@ -14,9 +14,10 @@ pub fn write_segment_to_buffer_set(
         // Interleaved output - single output handle
         let buffer = &mut buffers[0];
         match format {
-            OutputFormat::Fasta => write_fasta(buffer, segment),
-            OutputFormat::Fastq => write_fastq(buffer, segment),
+            OutputFormat::Fasta => write_fasta(buffer, segment)?,
+            OutputFormat::Fastq => write_fastq(buffer, segment)?,
         }
+        Ok(())
     } else {
         if segment.sid() >= buffers.len() {
             bail!(
@@ -24,11 +25,13 @@ pub fn write_segment_to_buffer_set(
                 segment.sid()
             );
         }
-        let buffer = &mut buffers[segment.sid()];
+        let seg_id = segment.sid();
+        let buffer = &mut buffers[seg_id];
         match format {
-            OutputFormat::Fasta => write_fasta(buffer, segment),
-            OutputFormat::Fastq => write_fastq(buffer, segment),
+            OutputFormat::Fasta => write_fasta(buffer, segment)?,
+            OutputFormat::Fastq => write_fastq(buffer, segment)?,
         }
+        Ok(())
     }
 }
 

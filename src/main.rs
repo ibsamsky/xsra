@@ -16,7 +16,7 @@ use prefetch::prefetch;
 use recode::recode;
 
 pub const BUFFER_SIZE: usize = 1024 * 1024;
-pub const RECORD_CAPACITY: usize = 512;
+pub const RECORD_CAPACITY: usize = 1024;
 
 fn main() -> Result<()> {
     let args = Cli::parse();
