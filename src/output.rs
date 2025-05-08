@@ -1,4 +1,3 @@
-use libc::mode_t;
 use std::fmt;
 use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
@@ -14,7 +13,6 @@ use crate::cli::FilterOptions;
 use crate::cli::OutputFormat;
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileTypeExt;
-use std::{ffi::CString, io, path::Path};
 
 use super::BUFFER_SIZE;
 
@@ -68,54 +66,19 @@ impl OutputFileType<'_> {
     }
 }
 
-// From : https://github.com/kotauskas/interprocess/blob/main/src/os/unix/fifo_file.rs
-/// Creates a FIFO file at the specified path with the specified permissions.
-///
-/// Since the `mode` parameter is masked with the [`umask`], it's best to leave it at `0o777` unless
-/// a different value is desired.
-///
-/// ## System calls
-/// - [`mkfifo`]
-///
-/// [`mkfifo`]: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/mkfifo.html
-/// [`umask`]: https://en.wikipedia.org/wiki/Umask
-#[cfg(target_family = "unix")]
-pub fn create_fifo<P: AsRef<Path>>(path: P, mode: mode_t) -> io::Result<()> {
-    _create_fifo(path.as_ref(), mode)
-}
-#[cfg(target_family = "windows")]
-pub fn create_fifo<P: AsRef<Path>>(path: P, mode: mode_t) -> io::Result<()> {
-    panic!("Use of named pipes is not currently supported on Windows");
-}
-fn _create_fifo(path: &Path, mode: mode_t) -> io::Result<()> {
-    let path = CString::new(path.as_os_str().as_encoded_bytes())?;
-    let res = unsafe { libc::mkfifo(path.as_bytes_with_nul().as_ptr().cast(), mode) != -1 };
-    if res {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
+fn create_fifo_if_absent(path: OutputFileType) -> Result<()> {
     match path {
-        OutputFileType::RegularFile(path) => {
-            let file = File::create(path)?;
-            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
-            Ok(Box::new(writer))
-        }
-        OutputFileType::StdOut => {
-            let writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
-            Ok(Box::new(writer))
-        }
         OutputFileType::NamedPipe(path) => {
             // check if the file already exists and IS a fifo; if so
             // then open it for writing, otherwise make it.
             let fifo_exists = if std::fs::exists(path)? {
                 let minfo = std::fs::metadata(path)?;
-
                 if cfg!(target_family = "unix") {
                     if minfo.file_type().is_fifo() {
+                        eprintln!(
+                            "The path {} already existed as is a fifo, so using that for communication.",
+                            path
+                        );
                         true
                     } else {
                         // the file existed but wasn't a fifo
@@ -144,10 +107,29 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
                     );
                 }
             }
+        }
+        _ => {
+            bail!("`create_fifo_if_absent` should not be called for a non-fifo output!");
+        }
+    }
+    Ok(())
+}
 
+fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
+    match path {
+        OutputFileType::RegularFile(path) => {
+            let file = File::create(path)?;
+            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
+            Ok(Box::new(writer))
+        }
+        OutputFileType::StdOut => {
+            let writer = BufWriter::with_capacity(BUFFER_SIZE, stdout());
+            Ok(Box::new(writer))
+        }
+        OutputFileType::NamedPipe(path) => {
             let file = std::fs::OpenOptions::new().write(true).open(path)?;
-            //let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
-            Ok(Box::new(file))
+            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
+            Ok(Box::new(writer))
         }
     }
 }
@@ -213,16 +195,31 @@ pub fn build_writers(
         // compression. If fewer than four total threads were allocated, just set aside one thread.
         let c_threads = (num_threads / 4).max(1);
         let mut writers = vec![];
+        if is_named_pipe {
+            for i in 0..4 {
+                if filter_opts.include.is_empty() || filter_opts.include.contains(&i) {
+                    let path = build_path_name(
+                        OutputFileType::NamedPipe(outdir),
+                        prefix,
+                        compression,
+                        format,
+                        i,
+                    );
+                    create_fifo_if_absent(OutputFileType::NamedPipe(&path))?;
+                }
+            }
+        }
+
         for i in 0..4 {
+            let outf = |x| {
+                if is_named_pipe {
+                    OutputFileType::NamedPipe(x)
+                } else {
+                    OutputFileType::RegularFile(x)
+                }
+            };
             // only create actual writers if we won't filter out this segment anyway
             if filter_opts.include.is_empty() || filter_opts.include.contains(&i) {
-                let outf = |x| {
-                    if is_named_pipe {
-                        OutputFileType::NamedPipe(x)
-                    } else {
-                        OutputFileType::RegularFile(x)
-                    }
-                };
                 let path = build_path_name(outf(outdir), prefix, compression, format, i);
                 let writer = writer_from_path(outf(&path))?;
                 let writer = compression_passthrough(writer, compression, c_threads)?;

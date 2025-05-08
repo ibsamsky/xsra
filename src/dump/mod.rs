@@ -40,139 +40,6 @@ fn launch_threads<W: Write + Send + 'static>(
         Some(set)
     };
 
-    let mut handles = Vec::new();
-    for i in 0..num_threads {
-        let writer = Arc::clone(&shared_writers);
-        let segment_set = segment_set.clone();
-        let start = (i * records_per_thread) + 1;
-        let stop = if i == num_threads - 1 {
-            start + records_per_thread + remainder - 1
-        } else {
-            start + records_per_thread - 1
-        };
-        let path = path.to_string();
-
-        let handle = std::thread::spawn(move || -> Result<ProcessStatistics> {
-            let reader = SraReader::new(&path)?;
-
-            // Initialize local buffers and counters
-            let mut stats = ProcessStatistics::default();
-            let mut local_buffers = build_local_buffers(&writer.lock());
-            let mut counts = vec![0; local_buffers.len()];
-
-            // Iterate over record spots and write to buffers
-            for (idx, record) in reader.into_range_iter(start as i64, stop)?.enumerate() {
-                let record = record?;
-
-                // Iterate over segments in the record
-                for segment in record.into_iter() {
-                    // Skip segment if outside of set
-                    if let Some(ref set) = segment_set {
-                        if !set.contains(&segment.sid()) {
-                            continue;
-                        }
-                    }
-
-                    // Skip technical segments if required
-                    if filter_opts.skip_technical && segment.is_technical() {
-                        // Increment filter statistics
-                        stats.inc_filter_type(segment.sid());
-                        continue;
-                    }
-
-                    // Skip reads if they are under the minimum read length
-                    if segment.len() < filter_opts.min_read_len {
-                        // Increment filter statistics
-                        stats.inc_filter_size(segment.sid());
-                        continue;
-                    }
-
-                    // Write the segment to the record set
-                    write_segment_to_buffer_set(&mut local_buffers, &segment, format)?;
-
-                    if counts.len() == 1 {
-                        counts[0] += 1;
-                    } else {
-                        counts[segment.sid()] += 1;
-                    }
-
-                    // Increment read statistics
-                    stats.inc_reads(segment.sid());
-                }
-
-                // Handle buffer writes at specific intervals
-                if idx % RECORD_CAPACITY == 0 {
-                    // Lock the writer until all buffers are written
-                    let mut writer = writer.lock();
-
-                    // Write all buffers to the writer
-                    for ((global_buf, local_buf), local_count) in writer
-                        .iter_mut()
-                        .zip(local_buffers.iter_mut())
-                        .zip(counts.iter_mut())
-                    {
-                        if *local_count == 0 {
-                            continue;
-                        }
-                        global_buf.write_all(local_buf)?;
-                        local_buf.clear();
-                        *local_count = 0;
-                    }
-                }
-
-                // Increment record statistics
-                stats.inc_spots();
-            }
-
-            // Write remaining buffers to shared writer
-            let mut writer = writer.lock();
-            for (i, buffer) in local_buffers.iter_mut().enumerate() {
-                writer[i].write_all(buffer)?;
-                buffer.clear();
-            }
-
-            // Return thread-specific statistics
-            Ok(stats)
-        });
-
-        // Collect all thread handles
-        handles.push(handle);
-    }
-
-    // Collect all statistics
-    let mut stats = ProcessStatistics::default();
-    for handle in handles {
-        let thread_stats = handle.join().expect("Thread panicked")?;
-        stats = stats + thread_stats;
-    }
-
-    // Flush all writers
-    let mut writer = shared_writers.lock();
-    for buffer in writer.iter_mut() {
-        buffer.flush()?;
-    }
-
-    Ok(stats)
-}
-
-fn launch_threads_fifo<W: Write + Send + 'static>(
-    path: &str,
-    num_threads: u64,
-    records_per_thread: u64,
-    remainder: u64,
-    shared_writers: Arc<Mutex<Vec<W>>>,
-    filter_opts: FilterOptions,
-    format: OutputFormat,
-) -> Result<ProcessStatistics> {
-    // Segments included in the output
-    let segment_set = if filter_opts.include.is_empty() {
-        None
-    } else {
-        // checking a small vector should be faster than a HashSet
-        let set: Vec<usize> = filter_opts.include.clone();
-        Some(set)
-    };
-
     // note that right now we will launch async writer threads per output segment
     // this can mess with the total thread count, so we should think about the best
     // way to deal with this.
@@ -383,27 +250,15 @@ pub fn dump(
 
     let included_segs = filter_opts.include.clone();
     // Launch worker threads
-    let stats = if output_opts.named_pipes {
-        launch_threads_fifo(
-            &accession,
-            num_threads,
-            records_per_thread,
-            remainder,
-            shared_writers,
-            filter_opts,
-            output_opts.format,
-        )?
-    } else {
-        launch_threads(
-            &accession,
-            num_threads,
-            records_per_thread,
-            remainder,
-            shared_writers,
-            filter_opts,
-            output_opts.format,
-        )?
-    };
+    let stats = launch_threads(
+        &accession,
+        num_threads,
+        records_per_thread,
+        remainder,
+        shared_writers,
+        filter_opts,
+        output_opts.format,
+    )?;
 
     // Remove empty files
     if output_opts.split {
