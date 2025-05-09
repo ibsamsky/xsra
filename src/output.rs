@@ -128,8 +128,7 @@ fn writer_from_path(path: OutputFileType) -> Result<Box<dyn Write + Send>> {
         }
         OutputFileType::NamedPipe(path) => {
             let file = std::fs::OpenOptions::new().write(true).open(path)?;
-            let writer = BufWriter::with_capacity(BUFFER_SIZE, file);
-            Ok(Box::new(writer))
+            Ok(Box::new(file))
         }
     }
 }
@@ -178,16 +177,17 @@ pub fn build_path_name(
 }
 
 pub fn build_writers(
-    outdir: Option<(&str, bool)>,
+    outdir: Option<&str>,
     prefix: &str,
     compression: Compression,
     format: OutputFormat,
     num_threads: usize,
     filter_opts: &FilterOptions,
+    is_fifo: bool,
 ) -> Result<Vec<Box<dyn Write + Send>>> {
-    if let Some((outdir, is_named_pipe)) = outdir {
+    if let Some(outdir) = outdir {
         // create directory if it doesn't exist
-        if !std::path::Path::new(outdir).exists() && !is_named_pipe {
+        if !std::path::Path::new(outdir).exists() && !is_fifo {
             std::fs::create_dir(outdir)?;
         }
 
@@ -195,7 +195,7 @@ pub fn build_writers(
         // compression. If fewer than four total threads were allocated, just set aside one thread.
         let c_threads = (num_threads / 4).max(1);
         let mut writers = vec![];
-        if is_named_pipe {
+        if is_fifo {
             for i in 0..4 {
                 if filter_opts.include.is_empty() || filter_opts.include.contains(&i) {
                     let path = build_path_name(
@@ -212,7 +212,7 @@ pub fn build_writers(
 
         for i in 0..4 {
             let outf = |x| {
-                if is_named_pipe {
+                if is_fifo {
                     OutputFileType::NamedPipe(x)
                 } else {
                     OutputFileType::RegularFile(x)
@@ -238,10 +238,4 @@ pub fn build_writers(
         writers.push(writer);
         Ok(writers)
     }
-}
-
-pub fn build_local_buffers<T>(global_writer: &[T]) -> Vec<Vec<u8>> {
-    let num_buffers = global_writer.len();
-    let buffers = vec![Vec::with_capacity(BUFFER_SIZE); num_buffers];
-    buffers
 }

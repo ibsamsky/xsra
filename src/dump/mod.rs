@@ -1,33 +1,30 @@
+mod output;
 mod stats;
 mod utils;
 
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-//use futures::channel::mpsc::Receiver;
-//use futures::SinkExt;
 use ncbi_vdb_sys::SraReader;
+use output::{build_segment_writer, BoxedSegmentWriter};
 use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, InputOptions, OutputFormat};
-use crate::output::{build_local_buffers, build_path_name, build_writers, OutputFileType};
+use crate::output::{build_path_name, OutputFileType};
 use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
 
 use crate::utils::get_num_records;
 use stats::ProcessStatistics;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::thread;
 use utils::write_segment_to_buffer_set;
 
-fn launch_threads<W: Write + Send + 'static>(
+fn launch_threads(
     path: &str,
     num_threads: u64,
     records_per_thread: u64,
     remainder: u64,
-    shared_writers: Arc<Mutex<Vec<W>>>,
+    writer: Arc<Mutex<BoxedSegmentWriter>>,
     filter_opts: FilterOptions,
     format: OutputFormat,
 ) -> Result<ProcessStatistics> {
@@ -40,155 +37,99 @@ fn launch_threads<W: Write + Send + 'static>(
         Some(set)
     };
 
-    // note that right now we will launch async writer threads per output segment
-    // this can mess with the total thread count, so we should think about the best
-    // way to deal with this.
-    let (s0, r0): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
-    let (s1, r1): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
-    let (s2, r2): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
-    let (s3, r3): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(4 * num_threads as usize);
+    let mut handles = Vec::new();
+    for i in 0..num_threads {
+        let segment_set = segment_set.clone();
 
-    let receivers = vec![r0, r1, r2, r3];
-    let senders = Arc::new(Mutex::new(vec![s0, s1, s2, s3]));
-    let mut writers = shared_writers.lock();
-    let stats_res = thread::scope(|sc| {
-        let mut handles = Vec::new();
+        let start = (i * records_per_thread) + 1;
+        let stop = if i == num_threads - 1 {
+            start + records_per_thread + remainder - 1
+        } else {
+            start + records_per_thread - 1
+        };
+        let path = path.to_string();
+        let shared_writer = writer.clone();
 
-        let wslice = Arc::new(vec![0; writers.len()]);
-        let receiver_threads = receivers
-            .into_iter()
-            .zip(writers.iter_mut())
-            .map(|(r, w)| {
-                sc.spawn(|| {
-                    for buf in r {
-                        w.write_all(buf.as_slice())?;
-                    }
-                    // flush writers at the end
-                    w.flush()?;
-                    Ok(())
-                })
-            })
-            .collect::<Vec<std::thread::ScopedJoinHandle<anyhow::Result<()>>>>();
+        let handle = std::thread::spawn(move || -> Result<ProcessStatistics> {
+            let reader = SraReader::new(&path)?;
 
-        for i in 0..num_threads {
-            let segment_set = segment_set.clone();
-            let senders = Arc::clone(&senders);
+            // Initialize local buffers and counters
+            let mut stats = ProcessStatistics::default();
+            let mut local_buffers = shared_writer.lock().generate_local_buffers();
+            let mut counts = vec![0; local_buffers.len()];
 
-            let start = (i * records_per_thread) + 1;
-            let stop = if i == num_threads - 1 {
-                start + records_per_thread + remainder - 1
-            } else {
-                start + records_per_thread - 1
-            };
-            let path = path.to_string();
-            let wslice = Arc::clone(&wslice);
+            // Iterate over record spots and write to buffers
+            for (idx, record) in reader.into_range_iter(start as i64, stop)?.enumerate() {
+                let record = record?;
 
-            let handle = std::thread::spawn(move || -> Result<ProcessStatistics> {
-                let reader = SraReader::new(&path)?;
-
-                // Initialize local buffers and counters
-                let mut stats = ProcessStatistics::default();
-                let mut local_buffers = build_local_buffers(&wslice);
-                let mut counts = vec![0; local_buffers.len()];
-                let senders = senders.clone();
-
-                // Iterate over record spots and write to buffers
-                for (idx, record) in reader.into_range_iter(start as i64, stop)?.enumerate() {
-                    let record = record?;
-
-                    // Iterate over segments in the record
-                    for segment in record.into_iter() {
-                        // Skip segment if outside of set
-                        if let Some(ref set) = segment_set {
-                            if !set.contains(&segment.sid()) {
-                                continue;
-                            }
-                        }
-
-                        // Skip technical segments if required
-                        if filter_opts.skip_technical && segment.is_technical() {
-                            // Increment filter statistics
-                            stats.inc_filter_type(segment.sid());
+                // Iterate over segments in the record
+                for segment in record.into_iter() {
+                    // Skip segment if outside of set
+                    if let Some(ref set) = segment_set {
+                        if !set.contains(&segment.sid()) {
                             continue;
                         }
-
-                        // Skip reads if they are under the minimum read length
-                        if segment.len() < filter_opts.min_read_len {
-                            // Increment filter statistics
-                            stats.inc_filter_size(segment.sid());
-                            continue;
-                        }
-
-                        // Write the segment to the record set
-                        write_segment_to_buffer_set(&mut local_buffers, &segment, format)?;
-
-                        if counts.len() == 1 {
-                            counts[0] += 1;
-                        } else {
-                            counts[segment.sid()] += 1;
-                        }
-
-                        // Increment read statistics
-                        stats.inc_reads(segment.sid());
                     }
 
-                    // Handle buffer writes at specific intervals
-                    if idx > 0 && (idx % RECORD_CAPACITY == 0) {
-                        // Lock the writer until all buffers are written
-                        let mut senders = senders.lock();
-                        for ((sender, local_buf), local_count) in senders
-                            .iter_mut()
-                            .zip(local_buffers.iter_mut())
-                            .zip(counts.iter_mut())
-                        {
-                            if *local_count == 0 {
-                                continue;
-                            }
-
-                            sender.send(local_buf.clone())?;
-                            local_buf.clear();
-                            *local_count = 0;
-                        }
-                    }
-
-                    // Increment record statistics
-                    stats.inc_spots();
-                }
-
-                // Write remaining buffers to shared writer
-                let mut senders = senders.lock();
-                for (sender, local_buf) in senders.iter_mut().zip(local_buffers.iter_mut()) {
-                    if local_buf.is_empty() {
+                    // Skip technical segments if required
+                    if filter_opts.skip_technical && segment.is_technical() {
+                        // Increment filter statistics
+                        stats.inc_filter_type(segment.sid());
                         continue;
                     }
-                    sender.send(local_buf.clone())?;
-                    local_buf.clear();
+
+                    // Skip reads if they are under the minimum read length
+                    if segment.len() < filter_opts.min_read_len {
+                        // Increment filter statistics
+                        stats.inc_filter_size(segment.sid());
+                        continue;
+                    }
+
+                    // Write the segment to the record set
+                    write_segment_to_buffer_set(&mut local_buffers, &segment, format)?;
+
+                    if counts.len() == 1 {
+                        counts[0] += 1;
+                    } else {
+                        counts[segment.sid()] += 1;
+                    }
+
+                    // Increment read statistics
+                    stats.inc_reads(segment.sid());
                 }
-                drop(senders);
-                // Return thread-specific statistics
-                Ok(stats)
-            });
 
-            // Collect all thread handles
-            handles.push(handle);
-        }
+                // Handle buffer writes at specific intervals
+                if idx > 0 && (idx % RECORD_CAPACITY == 0) {
+                    shared_writer
+                        .lock()
+                        .write_all_buffers(&mut local_buffers, &mut counts)?;
+                }
 
-        // Collect all statistics
-        let mut stats = ProcessStatistics::default();
-        for handle in handles {
-            let thread_stats = handle.join().expect("Thread panicked")?;
-            stats = stats + thread_stats;
-        }
+                // Increment record statistics
+                stats.inc_spots();
+            }
 
-        drop(senders);
-        for rec in receiver_threads {
-            rec.join().expect("Thread panicked")?;
-        }
+            // write remaining buffers
+            shared_writer
+                .lock()
+                .write_all_buffers(&mut local_buffers, &mut counts)?;
 
-        Ok(stats)
-    });
+            // Return thread-specific statistics
+            Ok(stats)
+        });
 
-    stats_res
+        // Collect all thread handles
+        handles.push(handle);
+    }
+
+    // Collect all statistics
+    let mut stats = ProcessStatistics::default();
+    for handle in handles {
+        let thread_stats = handle.join().expect("Thread panicked")?;
+        stats = stats + thread_stats;
+    }
+
+    Ok(stats)
 }
 
 pub fn dump(
@@ -226,27 +167,17 @@ pub fn dump(
     let records_per_thread = num_records / num_threads;
     let remainder = num_records % num_threads;
 
-    // Build writers depending on split requirements
-    let writers = if output_opts.split {
-        build_writers(
-            Some((&output_opts.outdir, output_opts.named_pipes)),
-            &output_opts.prefix,
-            output_opts.compression,
-            output_opts.format,
-            num_threads as usize,
-            &filter_opts,
-        )
-    } else {
-        build_writers(
-            None,
-            &output_opts.prefix,
-            output_opts.compression,
-            output_opts.format,
-            num_threads as usize,
-            &filter_opts,
-        )
-    }?;
-    let shared_writers = Arc::new(Mutex::new(writers));
+    let writer = build_segment_writer(
+        Some(&output_opts.outdir),
+        &output_opts.prefix,
+        output_opts.compression,
+        output_opts.format,
+        num_threads as usize,
+        &filter_opts,
+        output_opts.named_pipes,
+        output_opts.split,
+    )
+    .map(|x| Arc::new(Mutex::new(x)))?;
 
     let included_segs = filter_opts.include.clone();
     // Launch worker threads
@@ -255,7 +186,7 @@ pub fn dump(
         num_threads,
         records_per_thread,
         remainder,
-        shared_writers,
+        writer,
         filter_opts,
         output_opts.format,
     )?;
