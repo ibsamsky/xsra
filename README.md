@@ -24,6 +24,7 @@ However, it is not a complete feature-for-feature replacement, and some function
 - Spot subsetting
 - Stream directly from NCBI without intermediate prefetch
 - Prefetch SRA records for faster IO
+- Named pipes (FIFO) support
 
 ## Limitations
 
