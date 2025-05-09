@@ -108,6 +108,21 @@ You will need to provide a project ID.
 xsra prefetch <ACCESSION> -P gcp -G <GCP_PROJECT_ID>
 ```
 
+### Named Pipes (FIFO)
+
+`xsra` supports writing to [named pipes](https://en.wikipedia.org/wiki/Named_pipe) which can lead to improved disk usage by directly streaming records to downstream tools without an intermediary output file.
+
+The [FIFO file](https://www.man7.org/linux/man-pages/man7/fifo.7.html) creation is done by `xsra` and follows the naming format `<prefix>.<segment>.<ext>`.
+
+```bash
+
+# Stream an accession (segments 1,2) on a background thread
+xsra dump -T0 SRR27592687 -I 1,2 -sn &
+
+# Pipe segments directly to downstream tools
+minimap2 -t12 -xsr <index.fa> output.seg_1.fq output.seg_2.fq > output.paf
+```
+
 ## Contributing
 
 Please feel free to open an issue or pull request if you have any suggestions or improvements.
