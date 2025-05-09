@@ -25,6 +25,6 @@ pub struct FilterOptions {
     /// Only process specific segments
     ///
     /// Default: include all segments
-    #[clap(short = 'I', long, num_args = 0.., value_delimiter = ',')]
+    #[clap(short = 'I', long, num_args = 0.., value_delimiter = ',', required_if_eq("named_pipes", "true"))]
     pub include: Vec<usize>,
 }

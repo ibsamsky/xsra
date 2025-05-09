@@ -1,17 +1,17 @@
+mod output;
 mod stats;
 mod utils;
 
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use hashbrown::HashSet;
 use ncbi_vdb_sys::SraReader;
+use output::{build_segment_writer, BoxedSegmentWriter};
 use parking_lot::Mutex;
 
 use crate::cli::{DumpOutput, FilterOptions, InputOptions, OutputFormat};
-use crate::output::{build_local_buffers, build_path_name, build_writers};
+use crate::output::{build_path_name, OutputFileType};
 use crate::prefetch::identify_url;
 use crate::RECORD_CAPACITY;
 
@@ -19,12 +19,12 @@ use crate::utils::get_num_records;
 use stats::ProcessStatistics;
 use utils::write_segment_to_buffer_set;
 
-fn launch_threads<W: Write + Send + 'static>(
+fn launch_threads(
     path: &str,
     num_threads: u64,
     records_per_thread: u64,
     remainder: u64,
-    shared_writers: Arc<Mutex<Vec<W>>>,
+    writer: Arc<Mutex<BoxedSegmentWriter>>,
     filter_opts: FilterOptions,
     format: OutputFormat,
 ) -> Result<ProcessStatistics> {
@@ -32,14 +32,15 @@ fn launch_threads<W: Write + Send + 'static>(
     let segment_set = if filter_opts.include.is_empty() {
         None
     } else {
-        let set: HashSet<usize> = filter_opts.include.iter().copied().collect();
+        // checking a small vector should be faster than a HashSet
+        let set: Vec<usize> = filter_opts.include.clone();
         Some(set)
     };
 
     let mut handles = Vec::new();
     for i in 0..num_threads {
-        let writer = Arc::clone(&shared_writers);
         let segment_set = segment_set.clone();
+
         let start = (i * records_per_thread) + 1;
         let stop = if i == num_threads - 1 {
             start + records_per_thread + remainder - 1
@@ -47,13 +48,14 @@ fn launch_threads<W: Write + Send + 'static>(
             start + records_per_thread - 1
         };
         let path = path.to_string();
+        let shared_writer = writer.clone();
 
         let handle = std::thread::spawn(move || -> Result<ProcessStatistics> {
             let reader = SraReader::new(&path)?;
 
             // Initialize local buffers and counters
             let mut stats = ProcessStatistics::default();
-            let mut local_buffers = build_local_buffers(&writer.lock());
+            let mut local_buffers = shared_writer.lock().generate_local_buffers();
             let mut counts = vec![0; local_buffers.len()];
 
             // Iterate over record spots and write to buffers
@@ -97,35 +99,20 @@ fn launch_threads<W: Write + Send + 'static>(
                 }
 
                 // Handle buffer writes at specific intervals
-                if idx % RECORD_CAPACITY == 0 {
-                    // Lock the writer until all buffers are written
-                    let mut writer = writer.lock();
-
-                    // Write all buffers to the writer
-                    for ((global_buf, local_buf), local_count) in writer
-                        .iter_mut()
-                        .zip(local_buffers.iter_mut())
-                        .zip(counts.iter_mut())
-                    {
-                        if *local_count == 0 {
-                            continue;
-                        }
-                        global_buf.write_all(local_buf)?;
-                        local_buf.clear();
-                        *local_count = 0;
-                    }
+                if idx > 0 && (idx % RECORD_CAPACITY == 0) {
+                    shared_writer
+                        .lock()
+                        .write_all_buffers(&mut local_buffers, &mut counts)?;
                 }
 
                 // Increment record statistics
                 stats.inc_spots();
             }
 
-            // Write remaining buffers to shared writer
-            let mut writer = writer.lock();
-            for (i, buffer) in local_buffers.iter_mut().enumerate() {
-                writer[i].write_all(buffer)?;
-                buffer.clear();
-            }
+            // write remaining buffers
+            shared_writer
+                .lock()
+                .write_all_buffers(&mut local_buffers, &mut counts)?;
 
             // Return thread-specific statistics
             Ok(stats)
@@ -140,12 +127,6 @@ fn launch_threads<W: Write + Send + 'static>(
     for handle in handles {
         let thread_stats = handle.join().expect("Thread panicked")?;
         stats = stats + thread_stats;
-    }
-
-    // Flush all writers
-    let mut writer = shared_writers.lock();
-    for buffer in writer.iter_mut() {
-        buffer.flush()?;
     }
 
     Ok(stats)
@@ -186,44 +167,50 @@ pub fn dump(
     let records_per_thread = num_records / num_threads;
     let remainder = num_records % num_threads;
 
-    // Build writers depending on split requirements
-    let writers = if output_opts.split {
-        build_writers(
-            Some(&output_opts.outdir),
-            &output_opts.prefix,
-            output_opts.compression,
-            output_opts.format,
-            num_threads as usize,
-        )
-    } else {
-        build_writers(
-            None,
-            &output_opts.prefix,
-            output_opts.compression,
-            output_opts.format,
-            num_threads as usize,
-        )
-    }?;
-    let shared_writers = Arc::new(Mutex::new(writers));
+    let writer = build_segment_writer(
+        Some(&output_opts.outdir),
+        &output_opts.prefix,
+        output_opts.compression,
+        output_opts.format,
+        num_threads as usize,
+        &filter_opts,
+        output_opts.named_pipes,
+        output_opts.split,
+    )
+    .map(|x| Arc::new(Mutex::new(x)))?;
 
+    let included_segs = filter_opts.include.clone();
     // Launch worker threads
     let stats = launch_threads(
         &accession,
         num_threads,
         records_per_thread,
         remainder,
-        shared_writers,
+        writer,
         filter_opts,
         output_opts.format,
     )?;
 
     // Remove empty files
     if output_opts.split {
+        let wrap = |x| {
+            if output_opts.named_pipes {
+                OutputFileType::NamedPipe(x)
+            } else {
+                OutputFileType::RegularFile(x)
+            }
+        };
         stats.reads_per_segment.iter().enumerate().try_for_each(
             |(seg_id, &count)| -> Result<()> {
-                if count == 0 {
+                // if included_segs was non-empty, so we are applying a filter
+                // and this segment was not included, then we didn't create a real
+                // file for it.
+                if !included_segs.is_empty() && !included_segs.contains(&seg_id) {
+                    return Ok(());
+                }
+                if count == 0 || output_opts.named_pipes {
                     let path = build_path_name(
-                        &output_opts.outdir,
+                        wrap(&output_opts.outdir),
                         &output_opts.prefix,
                         output_opts.compression,
                         output_opts.format,

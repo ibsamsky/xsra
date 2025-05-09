@@ -24,6 +24,7 @@ However, it is not a complete feature-for-feature replacement, and some function
 - Spot subsetting
 - Stream directly from NCBI without intermediate prefetch
 - Prefetch SRA records for faster IO
+- Named pipes (FIFO) support
 
 ## Limitations
 
@@ -107,6 +108,23 @@ You will need to provide a project ID.
 ```bash
 xsra prefetch <ACCESSION> -P gcp -G <GCP_PROJECT_ID>
 ```
+
+### Named Pipes (FIFO)
+
+`xsra` supports writing to [named pipes](https://en.wikipedia.org/wiki/Named_pipe) which can lead to improved disk usage by directly streaming records to downstream tools without an intermediary output file.
+
+The [FIFO file](https://www.man7.org/linux/man-pages/man7/fifo.7.html) creation is done by `xsra` and follows the naming format `<prefix>.<segment>.<ext>`.
+
+```bash
+
+# Stream an accession (segments 1,2) on a background thread
+xsra dump -T0 SRR27592687 -I 1,2 -sn &
+
+# Pipe segments directly to downstream tools
+minimap2 -t12 -xsr <reference.fa> output.seg_1.fq output.seg_2.fq > output.paf
+```
+
+The fifo output can be combined with the supported compression flags, in which case, the compressed stream will be written to the named pipes. Named pipes expect that each pipe being written to has some other process reading the data being produced. As such, be certain to have `xsra` produce a named pipe for a segment if and only if the downstream process will consume this named pipe.
 
 ## Contributing
 
