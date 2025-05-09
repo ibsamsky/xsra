@@ -2,6 +2,7 @@ use std::io::Write;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Result;
 use parking_lot::Condvar;
@@ -15,6 +16,12 @@ use crate::{
 
 /// Set the default buffer size to 1MB
 const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024;
+
+/// Set the maximum overflow buffer size to 128MB
+const MAXIMUM_BUFFER_SIZE: usize = 128 * 1024 * 1024;
+
+/// Sets the default sleep time (in milliseconds)
+const DEFAULT_SLEEP_MS: u64 = 100;
 
 /// A shorthand for the type of output handles we expect to write
 pub type BoxedWriter = Box<dyn Write + Send>;
@@ -144,9 +151,16 @@ impl ThreadWriter {
 
     fn ingest(&self, data: &[u8]) {
         let (buffer, cvar) = &*self.buffer_pair;
-        let mut guard = buffer.lock();
-        guard.extend_from_slice(data);
-        cvar.notify_one();
+        loop {
+            let mut guard = buffer.lock();
+            if guard.len() <= MAXIMUM_BUFFER_SIZE {
+                guard.extend_from_slice(data);
+                cvar.notify_one();
+                break;
+            } else {
+                thread::sleep(Duration::from_millis(DEFAULT_SLEEP_MS));
+            }
+        }
     }
 }
 
