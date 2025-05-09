@@ -44,6 +44,7 @@ pub trait SegmentWriter {
 }
 
 /// Handles the creation logic and pipes the IO to the right Writer struct.
+#[allow(clippy::too_many_arguments)]
 pub fn build_segment_writer(
     outdir: Option<&str>,
     prefix: &str,
@@ -111,7 +112,7 @@ impl ThreadWriter {
 
         // Start the worker thread
         let join_handle = thread::spawn(move || -> Result<()> {
-            let &(ref buffer, ref cvar) = &*buffer_pair_clone;
+            let (buffer, cvar) = &*buffer_pair_clone;
 
             loop {
                 // Wait for data or shutdown signal
@@ -137,7 +138,7 @@ impl ThreadWriter {
                 drop(guard); // Release lock before I/O
 
                 // Perform actual write (potentially blocking I/O)
-                handle.write_all(&data.drain(..).as_slice())?;
+                handle.write_all(data.drain(..).as_slice())?;
                 handle.flush()?;
             }
         });
@@ -212,10 +213,7 @@ impl BufferedWriter {
             is_fifo,
         )?;
         let segment_buffers = vec![Vec::with_capacity(DEFAULT_BUFFER_SIZE); segment_handles.len()];
-        let thread_writers = segment_handles
-            .into_iter()
-            .map(|handle| ThreadWriter::new(handle))
-            .collect();
+        let thread_writers = segment_handles.into_iter().map(ThreadWriter::new).collect();
         Ok(Self {
             segment_buffers,
             thread_writers,

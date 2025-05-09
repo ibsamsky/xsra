@@ -120,8 +120,10 @@ The [FIFO file](https://www.man7.org/linux/man-pages/man7/fifo.7.html) creation 
 xsra dump -T0 SRR27592687 -I 1,2 -sn &
 
 # Pipe segments directly to downstream tools
-minimap2 -t12 -xsr <index.fa> output.seg_1.fq output.seg_2.fq > output.paf
+minimap2 -t12 -xsr <reference.fa> output.seg_1.fq output.seg_2.fq > output.paf
 ```
+
+The fifo output can be combined with the supported compression flags, in which case, the compressed stream will be written to the named pipes. Named pipes expect that each pipe being written to has some other process reading the data being produced. As such, be certain to have `xsra` produce a named pipe for a segment if and only if the downstream process will consume this named pipe.
 
 ## Contributing
 
