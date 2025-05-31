@@ -34,7 +34,7 @@ impl MultiInputOptions {
 #[derive(Debug, Clone, Parser)]
 #[clap(next_help_heading = "ACCESSION OPTIONS")]
 pub struct AccessionOptions {
-    /// Prefer SRA with complete quality scores
+    /// Only download an SRA with complete quality scores
     ///
     /// Default: lite, but will fallback to full quality if unavailable
     #[clap(short = 'Q', long)]

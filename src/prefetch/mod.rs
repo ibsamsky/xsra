@@ -42,8 +42,7 @@ pub fn query_entrez(accession: &str) -> Result<String> {
     Ok(response)
 }
 
-/// Try parsing URL with a specific quality preference
-fn try_parse_url_with_quality(
+pub fn parse_url(
     accession: &str,
     response: &str,
     full_quality: bool,
@@ -69,20 +68,20 @@ fn try_parse_url_with_quality(
     None
 }
 
-pub fn parse_url(
+pub fn parse_url_with_fallback(
     accession: &str,
     response: &str,
     full_quality: bool,
     provider: Provider,
 ) -> Option<String> {
     // Try preferred quality type
-    if let Some(url) = try_parse_url_with_quality(accession, response, full_quality, provider) {
+    if let Some(url) = parse_url(accession, response, full_quality, provider) {
         return Some(url);
     }
 
     // Fallback from SRA lite to full if needed
     if !full_quality {
-        if let Some(url) = try_parse_url_with_quality(accession, response, true, provider) {
+        if let Some(url) = parse_url(accession, response, true, provider) {
             eprintln!(
                 "Warning: Lite quality not available for {}, falling back to full quality",
                 accession
@@ -120,7 +119,7 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
         }
 
         // If we have a valid response, try to parse the URL
-        if let Some(url) = parse_url(
+        if let Some(url) = parse_url_with_fallback(
             accession,
             &entrez_response,
             options.full_quality,
