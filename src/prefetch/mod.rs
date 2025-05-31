@@ -42,7 +42,7 @@ pub fn query_entrez(accession: &str) -> Result<String> {
     Ok(response)
 }
 
-/// Helper function to try parsing URL with a specific quality preference
+/// Try parsing URL with a specific quality preference
 fn try_parse_url_with_quality(
     accession: &str,
     response: &str,
@@ -80,7 +80,7 @@ pub fn parse_url(
         return Some(url);
     }
 
-    // Fallback from lite to full
+    // Fallback from SRA lite to full if needed
     if !full_quality {
         if let Some(url) = try_parse_url_with_quality(accession, response, true, provider) {
             eprintln!(
