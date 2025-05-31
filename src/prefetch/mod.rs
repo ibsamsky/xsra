@@ -42,7 +42,8 @@ pub fn query_entrez(accession: &str) -> Result<String> {
     Ok(response)
 }
 
-pub fn parse_url(
+/// Helper function to try parsing URL with a specific quality preference
+fn try_parse_url_with_quality(
     accession: &str,
     response: &str,
     full_quality: bool,
@@ -65,6 +66,31 @@ pub fn parse_url(
             return Some(url);
         }
     }
+    None
+}
+
+pub fn parse_url(
+    accession: &str,
+    response: &str,
+    full_quality: bool,
+    provider: Provider,
+) -> Option<String> {
+    // Try preferred quality type
+    if let Some(url) = try_parse_url_with_quality(accession, response, full_quality, provider) {
+        return Some(url);
+    }
+
+    // Fallback to opposite quality type
+    if let Some(url) = try_parse_url_with_quality(accession, response, !full_quality, provider) {
+        let preferred = if full_quality { "Full" } else { "Lite" };
+        let fallback = if full_quality { "lite" } else { "full" };
+        eprintln!(
+            "Warning: {} quality not available for {}, falling back to {} quality",
+            preferred, accession, fallback
+        );
+        return Some(url);
+    }
+
     None
 }
 
