@@ -80,15 +80,15 @@ pub fn parse_url(
         return Some(url);
     }
 
-    // Fallback to opposite quality type
-    if let Some(url) = try_parse_url_with_quality(accession, response, !full_quality, provider) {
-        let preferred = if full_quality { "Full" } else { "Lite" };
-        let fallback = if full_quality { "lite" } else { "full" };
-        eprintln!(
-            "Warning: {} quality not available for {}, falling back to {} quality",
-            preferred, accession, fallback
-        );
-        return Some(url);
+    // Fallback from lite to full
+    if !full_quality {
+        if let Some(url) = try_parse_url_with_quality(accession, response, true, provider) {
+            eprintln!(
+                "Warning: Lite quality not available for {}, falling back to full quality",
+                accession
+            );
+            return Some(url);
+        }
     }
 
     None
