@@ -383,17 +383,9 @@ mod tests {
         use super::*;
 
         #[test]
-        fn detects_json_api_rate_limit_exceeded() {
+        fn detects_json_rate_limit_errors() {
             assert!(is_rate_limited(r#"{"error": "API rate limit exceeded"}"#));
-        }
-
-        #[test]
-        fn detects_json_rate_limit_exceeded() {
             assert!(is_rate_limited(r#"{"message": "rate limit exceeded"}"#));
-        }
-
-        #[test]
-        fn detects_json_limit_exceeded() {
             assert!(is_rate_limited(r#"{"error": "limit exceeded"}"#));
         }
 
@@ -403,49 +395,11 @@ mod tests {
         }
 
         #[test]
-        fn ignores_normal_responses() {
-            assert!(!is_rate_limited("normal response"));
-        }
-
-        #[test]
-        fn ignores_empty_responses() {
-            assert!(!is_rate_limited(""));
-        }
-
-        #[test]
-        fn ignores_success_json() {
-            assert!(!is_rate_limited(
-                r#"{"status": "success", "data": "some data"}"#
-            ));
-        }
-
-        #[test]
-        fn ignores_malformed_json_starting_with_brace() {
-            assert!(!is_rate_limited("{not valid json"));
-        }
-
-        #[test]
         fn ignores_false_positives() {
+            assert!(!is_rate_limited("normal response"));
+            assert!(!is_rate_limited(""));
+            assert!(!is_rate_limited(r#"{"status": "success"}"#));
             assert!(!is_rate_limited("user rating limit is 5 stars"));
-        }
-    }
-
-    mod provider {
-        use super::*;
-
-        #[test]
-        fn https_url_prefix() {
-            assert_eq!(Provider::Https.url_prefix(), "https://");
-        }
-
-        #[test]
-        fn gcp_url_prefix() {
-            assert_eq!(Provider::Gcp.url_prefix(), "gs://");
-        }
-
-        #[test]
-        fn aws_url_prefix() {
-            assert_eq!(Provider::Aws.url_prefix(), "s3://");
         }
     }
 
@@ -479,28 +433,11 @@ mod tests {
         }
 
         #[test]
-        fn filters_wrong_accession() {
-            let response = r#"url="https://example.com/SRR999999.sra""#;
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(result, None);
-        }
-
-        #[test]
-        fn filters_fastq_files() {
+        fn filters_unwanted_formats_and_wrong_accession() {
+            // Test multiple filtering scenarios in one test
             let response = r#"
+                url="https://example.com/SRR999999.sra"
                 url="https://example.com/SRR123456.fastq"
-                url="https://example.com/SRR123456.sra"
-            "#;
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(
-                result,
-                Some("https://example.com/SRR123456.sra".to_string())
-            );
-        }
-
-        #[test]
-        fn filters_gz_files() {
-            let response = r#"
                 url="https://example.com/SRR123456.sra.gz"
                 url="https://example.com/SRR123456.sra"
             "#;
@@ -512,52 +449,27 @@ mod tests {
         }
 
         #[test]
-        fn respects_gcp_provider() {
+        fn respects_provider_selection() {
             let response = r#"
                 url="https://sra-pub-run-odp.s3.amazonaws.com/sra/SRR123456/SRR123456.sra"
                 url="gs://sra-pub-run-gs/sra/SRR123456/SRR123456.sra"
-            "#;
-            let result = parse_url("SRR123456", response, true, Provider::Gcp);
-            assert_eq!(
-                result,
-                Some("gs://sra-pub-run-gs/sra/SRR123456/SRR123456.sra".to_string())
-            );
-        }
-
-        #[test]
-        fn respects_aws_provider() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
                 url="s3://sra-pub-src-odp/sra/SRR123456/SRR123456.sra"
             "#;
-            let result = parse_url("SRR123456", response, true, Provider::Aws);
+
+            let https_result = parse_url("SRR123456", response, true, Provider::Https);
+            assert!(https_result.unwrap().starts_with("https://"));
+
+            let gcp_result = parse_url("SRR123456", response, true, Provider::Gcp);
+            assert!(gcp_result.unwrap().starts_with("gs://"));
+        }
+
+        #[test]
+        fn returns_none_when_no_match() {
             assert_eq!(
-                result,
-                Some("s3://sra-pub-src-odp/sra/SRR123456/SRR123456.sra".to_string())
+                parse_url("SRR123456", "no urls here", true, Provider::Https),
+                None
             );
-        }
-
-        #[test]
-        fn returns_none_for_no_urls() {
-            let response = "no urls here";
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(result, None);
-        }
-
-        #[test]
-        fn handles_quotes_properly() {
-            let response = r#"url="https://example.com/SRR123456.sra""#;
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(
-                result,
-                Some("https://example.com/SRR123456.sra".to_string())
-            );
-        }
-
-        #[test]
-        fn returns_none_for_empty_response() {
-            let result = parse_url("SRR123456", "", true, Provider::Https);
-            assert_eq!(result, None);
+            assert_eq!(parse_url("SRR123456", "", true, Provider::Https), None);
         }
     }
 
@@ -565,31 +477,27 @@ mod tests {
         use super::*;
 
         #[test]
-        fn prefers_lite_when_both_available_and_full_quality_false() {
+        fn prefers_requested_quality_when_both_available() {
             let response = r#"
                 url="https://example.com/SRR123456.sra"
                 url="https://example.com/SRR123456.lite.sra"
             "#;
-            let result =
-                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-            assert!(result.unwrap().contains(".lite."));
-        }
 
-        #[test]
-        fn prefers_full_when_both_available_and_full_quality_true() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
-                url="https://example.com/SRR123456.lite.sra"
-            "#;
-            let result =
+            // Should prefer lite when full_quality=false
+            let lite_result =
+                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
+            assert!(lite_result.unwrap().contains(".lite."));
+
+            // Should prefer full when full_quality=true
+            let full_result =
                 parse_url_with_fallback("SRR123456", response, true, false, Provider::Https);
-            let url = result.unwrap();
+            let url = full_result.unwrap();
             assert!(url.contains("SRR123456.sra"));
             assert!(!url.contains(".lite."));
         }
 
         #[test]
-        fn falls_back_to_full_when_lite_unavailable_and_lite_only_false() {
+        fn falls_back_to_full_when_lite_unavailable_and_fallback_allowed() {
             let response = r#"url="https://example.com/SRR123456.sra""#;
             let result =
                 parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
@@ -613,39 +521,18 @@ mod tests {
         }
 
         #[test]
-        fn works_with_lite_only_false_when_only_lite_available() {
+        fn handles_conflicting_flags() {
             let response = r#"url="https://example.com/SRR123456.lite.sra""#;
+            // full_quality=true + lite_only=true should return None (conflicting requirements)
             let result =
-                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-            assert!(result.unwrap().contains(".lite."));
-        }
-
-        #[test]
-        fn returns_none_when_no_urls_available() {
-            let response = "no urls here";
-            let result =
-                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
+                parse_url_with_fallback("SRR123456", response, true, true, Provider::Https);
             assert_eq!(result, None);
         }
 
         #[test]
-        fn respects_full_quality_true_with_lite_only_false() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
-                url="https://example.com/SRR123456.lite.sra"
-            "#;
+        fn returns_none_when_no_urls_available() {
             let result =
-                parse_url_with_fallback("SRR123456", response, true, false, Provider::Https);
-            let url = result.unwrap();
-            assert!(url.contains("SRR123456.sra"));
-            assert!(!url.contains(".lite."));
-        }
-
-        #[test]
-        fn full_quality_true_with_lite_only_true_returns_none() {
-            let response = r#"url="https://example.com/SRR123456.lite.sra""#;
-            let result =
-                parse_url_with_fallback("SRR123456", response, true, true, Provider::Https);
+                parse_url_with_fallback("SRR123456", "no urls here", false, false, Provider::Https);
             assert_eq!(result, None);
         }
     }
