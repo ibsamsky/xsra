@@ -72,6 +72,7 @@ pub fn parse_url_with_fallback(
     accession: &str,
     response: &str,
     full_quality: bool,
+    lite_only: bool,
     provider: Provider,
 ) -> Option<String> {
     // Try preferred quality type
@@ -80,7 +81,7 @@ pub fn parse_url_with_fallback(
     }
 
     // Fallback from SRA lite to full if needed
-    if !full_quality {
+    if !lite_only {
         if let Some(url) = parse_url(accession, response, true, provider) {
             eprintln!(
                 "Warning: Lite quality not available for {}, falling back to full quality",
@@ -88,6 +89,8 @@ pub fn parse_url_with_fallback(
             );
             return Some(url);
         }
+    } else {
+        eprintln!("Warning: No lite quality found for <{accession}> - not performing fallback because `--lite-only` flag in use")
     }
 
     None
@@ -123,6 +126,7 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
             accession,
             &entrez_response,
             options.full_quality,
+            options.lite_only,
             options.provider,
         ) {
             match options.provider {
