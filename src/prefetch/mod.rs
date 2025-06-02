@@ -374,3 +374,324 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_rate_limited_table_driven() {
+        struct TestCase {
+            name: &'static str,
+            response: &'static str,
+            expected: bool,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                name: "detects json API rate limit exceeded",
+                response: r#"{"error": "API rate limit exceeded"}"#,
+                expected: true,
+            },
+            TestCase {
+                name: "detects json rate limit exceeded",
+                response: r#"{"message": "rate limit exceeded"}"#,
+                expected: true,
+            },
+            TestCase {
+                name: "detects json limit exceeded",
+                response: r#"{"error": "limit exceeded"}"#,
+                expected: true,
+            },
+            TestCase {
+                name: "detects plain text rate limit",
+                response: "API rate limit exceeded",
+                expected: true,
+            },
+            TestCase {
+                name: "ignores normal responses",
+                response: "normal response",
+                expected: false,
+            },
+            TestCase {
+                name: "ignores empty responses",
+                response: "",
+                expected: false,
+            },
+            TestCase {
+                name: "ignores success json",
+                response: r#"{"status": "success", "data": "some data"}"#,
+                expected: false,
+            },
+            TestCase {
+                name: "ignores malformed json starting with brace",
+                response: "{not valid json",
+                expected: false,
+            },
+            TestCase {
+                name: "ignores false positives",
+                response: "user rating limit is 5 stars",
+                expected: false,
+            },
+        ];
+
+        for test_case in test_cases {
+            let result = is_rate_limited(test_case.response);
+            assert_eq!(
+                result, test_case.expected,
+                "Test case '{}' failed",
+                test_case.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_provider_url_prefix_table_driven() {
+        let test_cases = vec![
+            (Provider::Https, "https://"),
+            (Provider::Gcp, "gs://"),
+            (Provider::Aws, "s3://"),
+        ];
+
+        for (provider, expected_prefix) in test_cases {
+            assert_eq!(
+                provider.url_prefix(),
+                expected_prefix,
+                "Provider {:?} should have prefix '{}'",
+                provider,
+                expected_prefix
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_url_table_driven() {
+        struct TestCase {
+            name: &'static str,
+            response: &'static str,
+            accession: &'static str,
+            full_quality: bool,
+            provider: Provider,
+            expected: Option<&'static str>,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                name: "prefers lite when full_quality=false",
+                response: r#"
+                    url="https://example.com/SRR123456.sra"
+                    url="https://example.com/SRR123456.lite.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: false,
+                provider: Provider::Https,
+                expected: Some("https://example.com/SRR123456.lite.sra"),
+            },
+            TestCase {
+                name: "prefers full when full_quality=true",
+                response: r#"
+                    url="https://example.com/SRR123456.sra"
+                    url="https://example.com/SRR123456.lite.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: Some("https://example.com/SRR123456.sra"),
+            },
+            TestCase {
+                name: "filters wrong accession",
+                response: r#"url="https://example.com/SRR999999.sra""#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: None,
+            },
+            TestCase {
+                name: "filters fastq files",
+                response: r#"
+                    url="https://example.com/SRR123456.fastq"
+                    url="https://example.com/SRR123456.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: Some("https://example.com/SRR123456.sra"),
+            },
+            TestCase {
+                name: "filters gz files",
+                response: r#"
+                    url="https://example.com/SRR123456.sra.gz"
+                    url="https://example.com/SRR123456.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: Some("https://example.com/SRR123456.sra"),
+            },
+            TestCase {
+                name: "respects GCP provider",
+                response: r#"
+                    url="https://sra-pub-run-odp.s3.amazonaws.com/sra/SRR123456/SRR123456.sra"
+                    url="gs://sra-pub-run-gs/sra/SRR123456/SRR123456.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Gcp,
+                expected: Some("gs://sra-pub-run-gs/sra/SRR123456/SRR123456.sra"),
+            },
+            TestCase {
+                name: "respects AWS provider",
+                response: r#"
+                    url="https://example.com/SRR123456.sra"
+                    url="s3://sra-pub-src-odp/sra/SRR123456/SRR123456.sra"
+                "#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Aws,
+                expected: Some("s3://sra-pub-src-odp/sra/SRR123456/SRR123456.sra"),
+            },
+            TestCase {
+                name: "returns none for no urls",
+                response: "no urls here",
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: None,
+            },
+            TestCase {
+                name: "handles quotes properly",
+                response: r#"url="https://example.com/SRR123456.sra""#,
+                accession: "SRR123456",
+                full_quality: true,
+                provider: Provider::Https,
+                expected: Some("https://example.com/SRR123456.sra"),
+            },
+        ];
+
+        for test_case in test_cases {
+            let result = parse_url(
+                test_case.accession,
+                test_case.response,
+                test_case.full_quality,
+                test_case.provider,
+            );
+
+            assert_eq!(
+                result.as_deref(),
+                test_case.expected,
+                "Test case '{}' failed",
+                test_case.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_url_with_fallback_table_driven() {
+        struct TestCase {
+            name: &'static str,
+            response: &'static str,
+            full_quality: bool,
+            lite_only: bool,
+            expected_contains: Option<&'static str>, // What the result should contain
+            should_succeed: bool,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                name: "both available, prefers lite when full_quality=false",
+                response: r#"
+                    url="https://example.com/SRR123456.sra"
+                    url="https://example.com/SRR123456.lite.sra"
+                "#,
+                full_quality: false,
+                lite_only: false,
+                expected_contains: Some(".lite."),
+                should_succeed: true,
+            },
+            TestCase {
+                name: "both available, prefers full when full_quality=true",
+                response: r#"
+                    url="https://example.com/SRR123456.sra"
+                    url="https://example.com/SRR123456.lite.sra"
+                "#,
+                full_quality: true,
+                lite_only: false,
+                expected_contains: Some("SRR123456.sra"),
+                should_succeed: true,
+            },
+            TestCase {
+                name: "only full available, fallback works when lite_only=false",
+                response: r#"url="https://example.com/SRR123456.sra""#,
+                full_quality: false,
+                lite_only: false,
+                expected_contains: Some("SRR123456.sra"),
+                should_succeed: true,
+            },
+            TestCase {
+                name: "only full available, no fallback when lite_only=true",
+                response: r#"url="https://example.com/SRR123456.sra""#,
+                full_quality: false,
+                lite_only: true,
+                expected_contains: None,
+                should_succeed: false,
+            },
+            TestCase {
+                name: "only lite available, works with lite_only=true",
+                response: r#"url="https://example.com/SRR123456.lite.sra""#,
+                full_quality: false,
+                lite_only: true,
+                expected_contains: Some(".lite."),
+                should_succeed: true,
+            },
+            TestCase {
+                name: "only lite available, works with lite_only=false",
+                response: r#"url="https://example.com/SRR123456.lite.sra""#,
+                full_quality: false,
+                lite_only: false,
+                expected_contains: Some(".lite."),
+                should_succeed: true,
+            },
+            TestCase {
+                name: "no URLs available",
+                response: "no urls here",
+                full_quality: false,
+                lite_only: false,
+                expected_contains: None,
+                should_succeed: false,
+            },
+        ];
+
+        for test_case in test_cases {
+            let result = parse_url_with_fallback(
+                "SRR123456",
+                test_case.response,
+                test_case.full_quality,
+                test_case.lite_only,
+                Provider::Https,
+            );
+
+            if test_case.should_succeed {
+                assert!(
+                    result.is_some(),
+                    "Test case '{}' should succeed but returned None",
+                    test_case.name
+                );
+
+                if let Some(expected_substring) = test_case.expected_contains {
+                    assert!(
+                        result.unwrap().contains(expected_substring),
+                        "Test case '{}' result should contain '{}'",
+                        test_case.name,
+                        expected_substring
+                    );
+                }
+            } else {
+                assert!(
+                    result.is_none(),
+                    "Test case '{}' should fail but returned Some",
+                    test_case.name
+                );
+            }
+        }
+    }
+}
