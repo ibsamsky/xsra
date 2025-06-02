@@ -40,6 +40,12 @@ pub struct AccessionOptions {
     #[clap(short = 'Q', long)]
     pub full_quality: bool,
 
+    /// Only download an SRA with lite-quality scores
+    ///
+    /// Will break if lite is unavailable
+    #[clap(long)]
+    pub lite_only: bool,
+
     /// URL provider
     #[clap(short = 'P', long, default_value = "https")]
     pub provider: Provider,
