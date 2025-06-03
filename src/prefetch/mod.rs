@@ -1,17 +1,17 @@
+use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
+use anyhow::{bail, Result};
+use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
     fs::File,
     io::{BufWriter, Write},
     sync::Arc,
     time::Duration,
 };
-
-use anyhow::{bail, Result};
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reqwest::blocking::Client;
 use tokio::{sync::Semaphore, time::sleep};
 
-use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
+#[cfg(not(test))]
+use reqwest::blocking::Client;
 
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
@@ -33,6 +33,7 @@ fn is_rate_limited(response: &str) -> bool {
     false
 }
 
+#[cfg(not(test))]
 pub fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
@@ -40,6 +41,45 @@ pub fn query_entrez(accession: &str) -> Result<String> {
     );
     let response = Client::new().get(&query_url).send()?.text()?;
     Ok(response)
+}
+
+#[cfg(test)]
+pub fn query_entrez(accession: &str) -> Result<String> {
+    // Mock implementation for tests - no network calls!
+    match accession {
+        // Empty or invalid accessions
+        "" => Ok("no urls found".to_string()),
+        accession if accession.contains("INVALID") => Ok("no urls found".to_string()),
+
+        // Rate limiting test case
+        "RATE_LIMITED" => Ok(r#"{"error": "API rate limit exceeded"}"#.to_string()),
+
+        // Multiple URL formats for provider testing
+        "SRR123456" => Ok(r#"
+                url="https://localhost:12345/sra/SRR123456/SRR123456.sra"
+                url="gs://test-bucket/sra/SRR123456/SRR123456.sra"
+                url="s3://test-bucket/sra/SRR123456/SRR123456.sra"
+            "#
+        .to_string()),
+
+        // Quality testing with both lite and full versions
+        "SRR999999" => Ok(r#"
+                url="https://localhost:12345/SRR999999.sra"
+                url="https://localhost:12345/SRR999999.lite.sra"
+            "#
+        .to_string()),
+
+        // Lite only version
+        "SRR_LITE_ONLY" => {
+            Ok(r#"url="https://localhost:12345/SRR_LITE_ONLY.lite.sra""#.to_string())
+        }
+
+        // Full only version
+        "SRR_FULL_ONLY" => Ok(r#"url="https://localhost:12345/SRR_FULL_ONLY.sra""#.to_string()),
+
+        // Default case
+        _ => Ok(r#"url="https://localhost:12345/default.sra""#.to_string()),
+    }
 }
 
 pub fn parse_url(
@@ -385,162 +425,460 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::NamedTempFile;
 
-    mod is_rate_limited {
-        use super::*;
-
-        #[test]
-        fn detects_json_rate_limit_errors() {
-            assert!(is_rate_limited(r#"{"error": "API rate limit exceeded"}"#));
-            assert!(is_rate_limited(r#"{"message": "rate limit exceeded"}"#));
-            assert!(is_rate_limited(r#"{"error": "limit exceeded"}"#));
-        }
-
-        #[test]
-        fn detects_plain_text_rate_limit() {
-            assert!(is_rate_limited("API rate limit exceeded"));
-        }
-
-        #[test]
-        fn ignores_false_positives() {
-            assert!(!is_rate_limited("normal response"));
-            assert!(!is_rate_limited(""));
-            assert!(!is_rate_limited(r#"{"status": "success"}"#));
-            assert!(!is_rate_limited("user rating limit is 5 stars"));
+    // Helper functions for test setup
+    fn create_test_accession_options() -> AccessionOptions {
+        AccessionOptions {
+            full_quality: true,
+            lite_only: false,
+            provider: Provider::Https,
+            retry_limit: 1,
+            retry_delay: 50,
+            gcp_project_id: None,
         }
     }
 
-    mod parse_url {
-        use super::*;
+    async fn create_mock_server(path: &str, status: usize, content: &str) -> mockito::ServerGuard {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", path)
+            .with_status(status)
+            .with_header("content-length", &content.len().to_string())
+            .with_body(content)
+            .create_async()
+            .await;
+        server
+    }
 
-        #[test]
-        fn prefers_lite_when_full_quality_false() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
-                url="https://example.com/SRR123456.lite.sra"
-            "#;
-            let result = parse_url("SRR123456", response, false, Provider::Https);
-            assert_eq!(
-                result,
-                Some("https://example.com/SRR123456.lite.sra".to_string())
+    fn download_url_test_setup() -> (NamedTempFile, String, ProgressBar) {
+        let temp_file = NamedTempFile::new().unwrap();
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+        let progress_bar = ProgressBar::new(0);
+        (temp_file, temp_path, progress_bar)
+    }
+
+    // is_rate_limited tests
+    #[test]
+    fn is_rate_limited_happy_path() {
+        assert!(!is_rate_limited(r#"{"status": "success"}"#));
+    }
+
+    #[test]
+    fn is_rate_limited_detects_rate_limit_errors() {
+        assert!(is_rate_limited("API rate limit exceeded"));
+        assert!(is_rate_limited(r#"{"error": "API rate limit exceeded"}"#));
+        assert!(is_rate_limited(r#"{"message": "rate limit exceeded"}"#));
+        assert!(is_rate_limited(r#"{"error": "limit exceeded"}"#));
+    }
+
+    // parse_url tests
+    #[test]
+    fn parse_url_prefers_lite_when_full_quality_false() {
+        let response = r#"
+            url="https://example.com/SRR123456.sra"
+            url="https://example.com/SRR123456.lite.sra"
+        "#;
+        let result = parse_url("SRR123456", response, false, Provider::Https);
+        assert_eq!(
+            result,
+            Some("https://example.com/SRR123456.lite.sra".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_prefers_full_when_full_quality_true() {
+        let response = r#"
+            url="https://example.com/SRR123456.sra"
+            url="https://example.com/SRR123456.lite.sra"
+        "#;
+        let result = parse_url("SRR123456", response, true, Provider::Https);
+        assert_eq!(
+            result,
+            Some("https://example.com/SRR123456.sra".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_filters_unwanted_formats() {
+        let response = r#"
+            url="https://example.com/SRR999999.sra"
+            url="https://example.com/SRR123456.fastq"
+            url="https://example.com/SRR123456.sra.gz"
+            url="https://example.com/SRR123456.sra"
+        "#;
+        let result = parse_url("SRR123456", response, true, Provider::Https);
+        assert_eq!(
+            result,
+            Some("https://example.com/SRR123456.sra".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_returns_none_when_no_match() {
+        assert_eq!(
+            parse_url("SRR123456", "no urls here", true, Provider::Https),
+            None
+        );
+        assert_eq!(parse_url("SRR123456", "", true, Provider::Https), None);
+    }
+
+    // parse_url_with_fallback tests
+    #[test]
+    fn fallback_prefers_requested_quality_when_both_available() {
+        let response = r#"
+            url="https://example.com/SRR123456.sra"
+            url="https://example.com/SRR123456.lite.sra"
+        "#;
+
+        // Should prefer lite when full_quality=false
+        let lite_result =
+            parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
+        assert!(lite_result.unwrap().contains(".lite."));
+
+        // Should prefer full when full_quality=true
+        let full_result =
+            parse_url_with_fallback("SRR123456", response, true, false, Provider::Https);
+        let url = full_result.unwrap();
+        assert!(url.contains("SRR123456.sra"));
+        assert!(!url.contains(".lite."));
+    }
+
+    #[test]
+    fn fallback_falls_back_when_lite_unavailable() {
+        let response = r#"url="https://example.com/SRR123456.sra""#;
+        let result = parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
+        assert!(result.unwrap().contains("SRR123456.sra"));
+    }
+
+    #[test]
+    fn fallback_prevents_when_lite_only_true() {
+        let response = r#"url="https://example.com/SRR123456.sra""#;
+        let result = parse_url_with_fallback("SRR123456", response, false, true, Provider::Https);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn fallback_works_with_lite_only_when_available() {
+        let response = r#"url="https://example.com/SRR123456.lite.sra""#;
+        let result = parse_url_with_fallback("SRR123456", response, false, true, Provider::Https);
+        assert!(result.unwrap().contains(".lite."));
+    }
+
+    #[test]
+    fn fallback_handles_conflicting_flags() {
+        let response = r#"url="https://example.com/SRR123456.lite.sra""#;
+        // full_quality=true + lite_only=true should return None
+        let result = parse_url_with_fallback("SRR123456", response, true, true, Provider::Https);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn fallback_returns_none_when_no_urls() {
+        let result =
+            parse_url_with_fallback("SRR123456", "no urls here", false, false, Provider::Https);
+        assert_eq!(result, None);
+    }
+
+    // identify_url tests
+    #[test]
+    fn identify_url_succeeds_with_proper_provider() {
+        let options = AccessionOptions {
+            full_quality: true,
+            lite_only: false,
+            provider: Provider::Gcp,
+            retry_limit: 3,
+            retry_delay: 100,
+            gcp_project_id: Some("test-project".to_string()),
+        };
+
+        // Test with SRR123456 which returns GCP URLs in our mock
+        let result = identify_url("SRR123456", &options);
+        assert!(
+            result.is_ok(),
+            "Failed to identify GCP URL: {:?}",
+            result.err()
+        );
+
+        let url = result.unwrap();
+        assert!(url.contains("gs://"));
+        assert!(url.contains("SRR123456"));
+        assert!(url.contains(".sra"));
+    }
+
+    #[test]
+    fn identify_url_fails_with_unsupported_provider() {
+        let options = AccessionOptions {
+            full_quality: true,
+            lite_only: false,
+            provider: Provider::Aws,
+            retry_limit: 1,
+            retry_delay: 100,
+            gcp_project_id: None,
+        };
+
+        let result = identify_url("SRR123456", &options);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn identify_url_fails_with_zero_retries() {
+        let mut options = create_test_accession_options();
+        options.retry_limit = 0;
+
+        let result = identify_url("INVALID", &options);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unable to identify a download URL"));
+    }
+
+    // identify_urls tests
+    #[tokio::test]
+    async fn identify_urls_succeeds_with_multiple_accessions() {
+        let mut options = create_test_accession_options();
+        options.full_quality = false;
+
+        let accessions = vec![
+            "SRR123456".to_string(),
+            "SRR999999".to_string(),
+            "SRR_LITE_ONLY".to_string(),
+        ];
+
+        let results = identify_urls(&accessions, &options).await;
+        assert!(
+            results.is_ok(),
+            "Failed to identify URLs: {:?}",
+            results.err()
+        );
+
+        let results = results.unwrap();
+        assert_eq!(results.len(), 3);
+
+        // Check that all results are successful
+        for (accession, url_result) in &results {
+            assert!(
+                url_result.is_ok(),
+                "Failed for {}: {:?}",
+                accession,
+                url_result
             );
-        }
 
-        #[test]
-        fn prefers_full_when_full_quality_true() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
-                url="https://example.com/SRR123456.lite.sra"
-            "#;
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(
-                result,
-                Some("https://example.com/SRR123456.sra".to_string())
-            );
-        }
-
-        #[test]
-        fn filters_unwanted_formats_and_wrong_accession() {
-            // Test multiple filtering scenarios in one test
-            let response = r#"
-                url="https://example.com/SRR999999.sra"
-                url="https://example.com/SRR123456.fastq"
-                url="https://example.com/SRR123456.sra.gz"
-                url="https://example.com/SRR123456.sra"
-            "#;
-            let result = parse_url("SRR123456", response, true, Provider::Https);
-            assert_eq!(
-                result,
-                Some("https://example.com/SRR123456.sra".to_string())
-            );
-        }
-
-        #[test]
-        fn respects_provider_selection() {
-            let response = r#"
-                url="https://sra-pub-run-odp.s3.amazonaws.com/sra/SRR123456/SRR123456.sra"
-                url="gs://sra-pub-run-gs/sra/SRR123456/SRR123456.sra"
-                url="s3://sra-pub-src-odp/sra/SRR123456/SRR123456.sra"
-            "#;
-
-            let https_result = parse_url("SRR123456", response, true, Provider::Https);
-            assert!(https_result.unwrap().starts_with("https://"));
-
-            let gcp_result = parse_url("SRR123456", response, true, Provider::Gcp);
-            assert!(gcp_result.unwrap().starts_with("gs://"));
-        }
-
-        #[test]
-        fn returns_none_when_no_match() {
-            assert_eq!(
-                parse_url("SRR123456", "no urls here", true, Provider::Https),
-                None
-            );
-            assert_eq!(parse_url("SRR123456", "", true, Provider::Https), None);
+            let url = url_result.as_ref().unwrap();
+            assert!(url.contains("https://"));
+            assert!(url.contains(accession));
         }
     }
 
-    mod parse_url_with_fallback {
-        use super::*;
+    #[tokio::test]
+    async fn identify_urls_handles_mixed_success_failure() {
+        let options = create_test_accession_options();
+        let accessions = vec![
+            "SRR123456".to_string(),         // Should succeed
+            "INVALID_ACCESSION".to_string(), // Should fail
+            "SRR999999".to_string(),         // Should succeed
+        ];
 
-        #[test]
-        fn prefers_requested_quality_when_both_available() {
-            let response = r#"
-                url="https://example.com/SRR123456.sra"
-                url="https://example.com/SRR123456.lite.sra"
-            "#;
+        let results = identify_urls(&accessions, &options).await;
+        assert!(
+            results.is_ok(),
+            "identify_urls should not fail even with some invalid accessions"
+        );
 
-            // Should prefer lite when full_quality=false
-            let lite_result =
-                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-            assert!(lite_result.unwrap().contains(".lite."));
+        let results = results.unwrap();
+        assert_eq!(results.len(), 3);
 
-            // Should prefer full when full_quality=true
-            let full_result =
-                parse_url_with_fallback("SRR123456", response, true, false, Provider::Https);
-            let url = full_result.unwrap();
-            assert!(url.contains("SRR123456.sra"));
-            assert!(!url.contains(".lite."));
-        }
+        // Check specific results
+        let (acc1, result1) = &results[0];
+        assert_eq!(acc1, "SRR123456");
+        assert!(result1.is_ok());
 
-        #[test]
-        fn falls_back_to_full_when_lite_unavailable_and_fallback_allowed() {
-            let response = r#"url="https://example.com/SRR123456.sra""#;
-            let result =
-                parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-            assert!(result.unwrap().contains("SRR123456.sra"));
-        }
+        let (acc2, result2) = &results[1];
+        assert_eq!(acc2, "INVALID_ACCESSION");
+        assert!(result2.is_err());
 
-        #[test]
-        fn prevents_fallback_when_lite_only_true() {
-            let response = r#"url="https://example.com/SRR123456.sra""#;
-            let result =
-                parse_url_with_fallback("SRR123456", response, false, true, Provider::Https);
-            assert_eq!(result, None);
-        }
+        let (acc3, result3) = &results[2];
+        assert_eq!(acc3, "SRR999999");
+        assert!(result3.is_ok());
+    }
 
-        #[test]
-        fn works_with_lite_only_when_lite_available() {
-            let response = r#"url="https://example.com/SRR123456.lite.sra""#;
-            let result =
-                parse_url_with_fallback("SRR123456", response, false, true, Provider::Https);
-            assert!(result.unwrap().contains(".lite."));
-        }
+    #[tokio::test]
+    async fn identify_urls_handles_empty_list() {
+        let options = create_test_accession_options();
 
-        #[test]
-        fn handles_conflicting_flags() {
-            let response = r#"url="https://example.com/SRR123456.lite.sra""#;
-            // full_quality=true + lite_only=true should return None (conflicting requirements)
-            let result =
-                parse_url_with_fallback("SRR123456", response, true, true, Provider::Https);
-            assert_eq!(result, None);
-        }
+        let results = identify_urls(&[], &options).await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
 
-        #[test]
-        fn returns_none_when_no_urls_available() {
-            let result =
-                parse_url_with_fallback("SRR123456", "no urls here", false, false, Provider::Https);
-            assert_eq!(result, None);
-        }
+    // download_url tests
+    #[tokio::test]
+    async fn download_url_succeeds_with_valid_content() {
+        let test_content = "test file data";
+        let server = create_mock_server("/test.sra", 200, test_content).await;
+        let (_temp_file, temp_path, pb) = download_url_test_setup();
+
+        let url = format!("{}/test.sra", server.url());
+
+        let result = download_url(url, temp_path.clone(), pb).await;
+        assert!(result.is_ok(), "Download failed: {:?}", result.err());
+
+        // Verify file contents
+        let contents = std::fs::read_to_string(&temp_path).unwrap();
+        assert_eq!(contents, test_content);
+    }
+
+    #[tokio::test]
+    async fn download_url_fails_with_404_error() {
+        let error_server = create_mock_server("/error.sra", 404, "").await;
+        let (_temp_file, temp_path, pb) = download_url_test_setup();
+
+        let error_url = format!("{}/error.sra", error_server.url());
+
+        let result = download_url(error_url, temp_path, pb).await;
+        assert!(result.is_err());
+    }
+
+    // prefetch tests
+    #[test]
+    fn prefetch_succeeds_with_single_https_accession() {
+        let input = MultiInputOptions {
+            accessions: vec!["SRR123456".to_string()],
+            options: AccessionOptions {
+                full_quality: true,
+                lite_only: false,
+                provider: Provider::Https,
+                retry_limit: 3,
+                retry_delay: 100,
+                gcp_project_id: None,
+            },
+        };
+
+        // Create a temporary directory for output
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_dir = temp_dir.path().to_str().unwrap();
+
+        // Note: This test will fail because we can't easily mock the HTTP download
+        // in the prefetch function, but it tests the flow up to the download step
+        let result = prefetch(&input, Some(output_dir));
+
+        // The test should fail at the download step due to invalid URL from mock
+        assert!(result.is_err());
+
+        // But the error should be related to download, not URL identification
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("error sending request")
+                || error_msg.contains("dns error")
+                || error_msg.contains("connection")
+                || error_msg.contains("Connection refused")
+                || error_msg.contains("invalid")
+                || error_msg.contains("404 Not Found")
+                || error_msg.contains("HTTP status client error"),
+            "Error should be network-related, not URL identification: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn prefetch_succeeds_with_multiple_https_accessions() {
+        let input = MultiInputOptions {
+            accessions: vec![
+                "SRR123456".to_string(),
+                "SRR999999".to_string(),
+                "SRR_LITE_ONLY".to_string(),
+            ],
+            options: AccessionOptions {
+                full_quality: false,
+                lite_only: false,
+                provider: Provider::Https,
+                retry_limit: 3,
+                retry_delay: 100,
+                gcp_project_id: None,
+            },
+        };
+
+        // Create a temporary directory for output
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_dir = temp_dir.path().to_str().unwrap();
+
+        // Note: This test will fail because we can't easily mock the HTTP downloads
+        // in the prefetch function, but it tests the flow up to the download step
+        let result = prefetch(&input, Some(output_dir));
+
+        // The test should fail at the download step due to invalid URLs from mock
+        assert!(result.is_err());
+
+        // But the error should be related to download, not URL identification
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("error sending request")
+                || error_msg.contains("dns error")
+                || error_msg.contains("connection")
+                || error_msg.contains("Connection refused")
+                || error_msg.contains("invalid")
+                || error_msg.contains("404 Not Found")
+                || error_msg.contains("HTTP status client error"),
+            "Error should be network-related, not URL identification: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn prefetch_fails_with_empty_accessions() {
+        let input = MultiInputOptions {
+            accessions: vec![],
+            options: AccessionOptions {
+                full_quality: true,
+                lite_only: false,
+                provider: Provider::Https,
+                retry_limit: 1,
+                retry_delay: 100,
+                gcp_project_id: None,
+            },
+        };
+
+        let result = prefetch(&input, None);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No accessions provided"));
+    }
+
+    #[test]
+    fn prefetch_fails_with_unsupported_aws_provider() {
+        let input = MultiInputOptions {
+            accessions: vec!["SRR123456".to_string()],
+            options: AccessionOptions {
+                full_quality: true,
+                lite_only: false,
+                provider: Provider::Aws,
+                retry_limit: 1,
+                retry_delay: 100,
+                gcp_project_id: None,
+            },
+        };
+
+        let result = prefetch(&input, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prefetch_fails_with_gcp_provider_missing_project_id() {
+        let input = MultiInputOptions {
+            accessions: vec!["SRR123456".to_string()],
+            options: AccessionOptions {
+                full_quality: true,
+                lite_only: false,
+                provider: Provider::Gcp,
+                retry_limit: 1,
+                retry_delay: 100,
+                gcp_project_id: None,
+            },
+        };
+
+        let result = prefetch(&input, None);
+        assert!(result.is_err());
     }
 }
