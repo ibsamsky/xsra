@@ -384,10 +384,8 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     mod is_rate_limited {
-        use super::*;
+        use super::super::*;
 
         #[test]
         fn detects_json_rate_limit_errors() {
@@ -411,7 +409,7 @@ mod tests {
     }
 
     mod parse_url {
-        use super::*;
+        use super::super::*;
 
         #[test]
         fn prefers_lite_when_full_quality_false() {
@@ -481,7 +479,7 @@ mod tests {
     }
 
     mod parse_url_with_fallback {
-        use super::*;
+        use super::super::*;
 
         #[test]
         fn prefers_requested_quality_when_both_available() {
