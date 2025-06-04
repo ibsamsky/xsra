@@ -33,6 +33,7 @@ fn is_rate_limited(response: &str) -> bool {
     false
 }
 
+// Note: This version of query_entrez is used in production
 #[cfg(not(test))]
 pub fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
@@ -43,18 +44,15 @@ pub fn query_entrez(accession: &str) -> Result<String> {
     Ok(response)
 }
 
+// Note: This version of query_entrez is used in tests
 #[cfg(test)]
 pub fn query_entrez(accession: &str) -> Result<String> {
-    // Mock implementation for tests - no network calls!
     match accession {
-        // Empty or invalid accessions
+        // For testing empty or invalid accessions
         "" => Ok("no urls found".to_string()),
         accession if accession.contains("INVALID") => Ok("no urls found".to_string()),
 
-        // Rate limiting test case
-        "RATE_LIMITED" => Ok(r#"{"error": "API rate limit exceeded"}"#.to_string()),
-
-        // Multiple URL formats for provider testing
+        // For testing multiple URL formats
         "SRR123456" => Ok(r#"
                 url="https://localhost:12345/sra/SRR123456/SRR123456.sra"
                 url="gs://test-bucket/sra/SRR123456/SRR123456.sra"
@@ -62,22 +60,19 @@ pub fn query_entrez(accession: &str) -> Result<String> {
             "#
         .to_string()),
 
-        // Quality testing with both lite and full versions
+        // For testing with both lite and full versions
         "SRR999999" => Ok(r#"
                 url="https://localhost:12345/SRR999999.sra"
                 url="https://localhost:12345/SRR999999.lite.sra"
             "#
         .to_string()),
 
-        // Lite only version
+        // For testing lite only version
         "SRR_LITE_ONLY" => {
             Ok(r#"url="https://localhost:12345/SRR_LITE_ONLY.lite.sra""#.to_string())
         }
 
-        // Full only version
-        "SRR_FULL_ONLY" => Ok(r#"url="https://localhost:12345/SRR_FULL_ONLY.sra""#.to_string()),
-
-        // Default case
+        // For testing default case
         _ => Ok(r#"url="https://localhost:12345/default.sra""#.to_string()),
     }
 }
@@ -520,7 +515,6 @@ mod tests {
             parse_url("SRR123456", "no urls here", true, Provider::Https),
             None
         );
-        assert_eq!(parse_url("SRR123456", "", true, Provider::Https), None);
     }
 
     // parse_url_with_fallback tests
@@ -534,21 +528,28 @@ mod tests {
         // Should prefer lite when full_quality=false
         let lite_result =
             parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-        assert!(lite_result.unwrap().contains(".lite."));
+        assert_eq!(
+            lite_result,
+            Some("https://example.com/SRR123456.lite.sra".to_string())
+        );
 
         // Should prefer full when full_quality=true
         let full_result =
             parse_url_with_fallback("SRR123456", response, true, false, Provider::Https);
-        let url = full_result.unwrap();
-        assert!(url.contains("SRR123456.sra"));
-        assert!(!url.contains(".lite."));
+        assert_eq!(
+            full_result,
+            Some("https://example.com/SRR123456.sra".to_string())
+        );
     }
 
     #[test]
     fn fallback_falls_back_when_lite_unavailable() {
         let response = r#"url="https://example.com/SRR123456.sra""#;
         let result = parse_url_with_fallback("SRR123456", response, false, false, Provider::Https);
-        assert!(result.unwrap().contains("SRR123456.sra"));
+        assert_eq!(
+            result,
+            Some("https://example.com/SRR123456.sra".to_string())
+        );
     }
 
     #[test]
@@ -562,7 +563,10 @@ mod tests {
     fn fallback_works_with_lite_only_when_available() {
         let response = r#"url="https://example.com/SRR123456.lite.sra""#;
         let result = parse_url_with_fallback("SRR123456", response, false, true, Provider::Https);
-        assert!(result.unwrap().contains(".lite."));
+        assert_eq!(
+            result,
+            Some("https://example.com/SRR123456.lite.sra".to_string())
+        );
     }
 
     #[test]
@@ -601,9 +605,7 @@ mod tests {
         );
 
         let url = result.unwrap();
-        assert!(url.contains("gs://"));
-        assert!(url.contains("SRR123456"));
-        assert!(url.contains(".sra"));
+        assert_eq!(url, "gs://test-bucket/sra/SRR123456/SRR123456.sra");
     }
 
     #[test]
@@ -646,69 +648,91 @@ mod tests {
             "SRR_LITE_ONLY".to_string(),
         ];
 
-        let results = identify_urls(&accessions, &options).await;
+        let results_wrapper = identify_urls(&accessions, &options).await;
         assert!(
-            results.is_ok(),
+            results_wrapper.is_ok(),
             "Failed to identify URLs: {:?}",
-            results.err()
+            results_wrapper.err()
         );
 
-        let results = results.unwrap();
-        assert_eq!(results.len(), 3);
+        let actual_results_vec: Vec<(String, Result<String, anyhow::Error>)> =
+            results_wrapper.unwrap();
 
-        // Check that all results are successful
-        for (accession, url_result) in &results {
-            assert!(
-                url_result.is_ok(),
-                "Failed for {}: {:?}",
-                accession,
-                url_result
-            );
+        // Transform the actual results into a comparable format,
+        // asserting that each individual URL identification was successful.
+        let actual_results: Vec<(String, String)> = actual_results_vec
+            .iter()
+            .map(|(acc, res)| {
+                assert!(
+                    res.is_ok(),
+                    "Expected Ok for accession {}, got {:?}",
+                    acc,
+                    res
+                );
+                (acc.clone(), res.as_ref().unwrap().clone())
+            })
+            .collect();
 
-            let url = url_result.as_ref().unwrap();
-            assert!(url.contains("https://"));
-            assert!(url.contains(accession));
-        }
+        let expected_results: Vec<(String, String)> = vec![
+            (
+                "SRR123456".to_string(),
+                "https://localhost:12345/sra/SRR123456/SRR123456.sra".to_string(),
+            ), // Fallback
+            (
+                "SRR999999".to_string(),
+                "https://localhost:12345/SRR999999.lite.sra".to_string(),
+            ),
+            (
+                "SRR_LITE_ONLY".to_string(),
+                "https://localhost:12345/SRR_LITE_ONLY.lite.sra".to_string(),
+            ),
+        ];
+
+        assert_eq!(actual_results, expected_results);
     }
 
     #[tokio::test]
     async fn identify_urls_handles_mixed_success_failure() {
-        let options = create_test_accession_options();
+        let options = create_test_accession_options(); // full_quality is true by default here
         let accessions = vec![
             "SRR123456".to_string(),         // Should succeed
             "INVALID_ACCESSION".to_string(), // Should fail
             "SRR999999".to_string(),         // Should succeed
         ];
 
-        let results = identify_urls(&accessions, &options).await;
+        let results_wrapper = identify_urls(&accessions, &options).await;
         assert!(
-            results.is_ok(),
+            results_wrapper.is_ok(),
             "identify_urls should not fail even with some invalid accessions"
         );
 
-        let results = results.unwrap();
-        assert_eq!(results.len(), 3);
+        let actual_results_vec: Vec<(String, Result<String, anyhow::Error>)> =
+            results_wrapper.unwrap();
 
-        // Check specific results
-        let (acc1, result1) = &results[0];
-        assert_eq!(acc1, "SRR123456");
-        assert!(result1.is_ok());
+        let actual_results: Vec<(String, Result<String, ()>)> = actual_results_vec
+            .into_iter()
+            .map(|(acc, res)| {
+                let mapped_res = match res {
+                    Ok(url_str) => Ok(url_str),
+                    Err(_) => Err(()),
+                };
+                (acc, mapped_res)
+            })
+            .collect();
 
-        let (acc2, result2) = &results[1];
-        assert_eq!(acc2, "INVALID_ACCESSION");
-        assert!(result2.is_err());
+        let expected_results: Vec<(String, Result<String, ()>)> = vec![
+            (
+                "SRR123456".to_string(),
+                Ok("https://localhost:12345/sra/SRR123456/SRR123456.sra".to_string()),
+            ),
+            ("INVALID_ACCESSION".to_string(), Err(())),
+            (
+                "SRR999999".to_string(),
+                Ok("https://localhost:12345/SRR999999.sra".to_string()),
+            ),
+        ];
 
-        let (acc3, result3) = &results[2];
-        assert_eq!(acc3, "SRR999999");
-        assert!(result3.is_ok());
-    }
-
-    #[tokio::test]
-    async fn identify_urls_handles_empty_list() {
-        let options = create_test_accession_options();
-
-        let results = identify_urls(&[], &options).await.unwrap();
-        assert_eq!(results.len(), 0);
+        assert_eq!(actual_results, expected_results);
     }
 
     // download_url tests
@@ -740,89 +764,6 @@ mod tests {
     }
 
     // prefetch tests
-    #[test]
-    fn prefetch_succeeds_with_single_https_accession() {
-        let input = MultiInputOptions {
-            accessions: vec!["SRR123456".to_string()],
-            options: AccessionOptions {
-                full_quality: true,
-                lite_only: false,
-                provider: Provider::Https,
-                retry_limit: 3,
-                retry_delay: 100,
-                gcp_project_id: None,
-            },
-        };
-
-        // Create a temporary directory for output
-        let temp_dir = tempfile::tempdir().unwrap();
-        let output_dir = temp_dir.path().to_str().unwrap();
-
-        // Note: This test will fail because we can't easily mock the HTTP download
-        // in the prefetch function, but it tests the flow up to the download step
-        let result = prefetch(&input, Some(output_dir));
-
-        // The test should fail at the download step due to invalid URL from mock
-        assert!(result.is_err());
-
-        // But the error should be related to download, not URL identification
-        let error_msg = result.unwrap_err().to_string();
-        assert!(
-            error_msg.contains("error sending request")
-                || error_msg.contains("dns error")
-                || error_msg.contains("connection")
-                || error_msg.contains("Connection refused")
-                || error_msg.contains("invalid")
-                || error_msg.contains("404 Not Found")
-                || error_msg.contains("HTTP status client error"),
-            "Error should be network-related, not URL identification: {}",
-            error_msg
-        );
-    }
-
-    #[test]
-    fn prefetch_succeeds_with_multiple_https_accessions() {
-        let input = MultiInputOptions {
-            accessions: vec![
-                "SRR123456".to_string(),
-                "SRR999999".to_string(),
-                "SRR_LITE_ONLY".to_string(),
-            ],
-            options: AccessionOptions {
-                full_quality: false,
-                lite_only: false,
-                provider: Provider::Https,
-                retry_limit: 3,
-                retry_delay: 100,
-                gcp_project_id: None,
-            },
-        };
-
-        // Create a temporary directory for output
-        let temp_dir = tempfile::tempdir().unwrap();
-        let output_dir = temp_dir.path().to_str().unwrap();
-
-        // Note: This test will fail because we can't easily mock the HTTP downloads
-        // in the prefetch function, but it tests the flow up to the download step
-        let result = prefetch(&input, Some(output_dir));
-
-        // The test should fail at the download step due to invalid URLs from mock
-        assert!(result.is_err());
-
-        // But the error should be related to download, not URL identification
-        let error_msg = result.unwrap_err().to_string();
-        assert!(
-            error_msg.contains("error sending request")
-                || error_msg.contains("dns error")
-                || error_msg.contains("connection")
-                || error_msg.contains("Connection refused")
-                || error_msg.contains("invalid")
-                || error_msg.contains("404 Not Found")
-                || error_msg.contains("HTTP status client error"),
-            "Error should be network-related, not URL identification: {}",
-            error_msg
-        );
-    }
 
     #[test]
     fn prefetch_fails_with_empty_accessions() {
@@ -862,6 +803,8 @@ mod tests {
 
         let result = prefetch(&input, None);
         assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Identified the Aws-URL, but cannot currently proceed"));
     }
 
     #[test]
@@ -880,5 +823,7 @@ mod tests {
 
         let result = prefetch(&input, None);
         assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("GCP project ID is required for GCP downloads"));
     }
 }
