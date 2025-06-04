@@ -649,8 +649,6 @@ mod tests {
         let actual_results_vec: Vec<(String, Result<String, anyhow::Error>)> =
             results_wrapper.unwrap();
 
-        // Transform the actual results into a comparable format,
-        // asserting that each individual URL identification was successful.
         let actual_results: Vec<(String, String)> = actual_results_vec
             .iter()
             .map(|(acc, res)| {
@@ -686,9 +684,9 @@ mod tests {
     async fn identify_urls_handles_mixed_success_failure() {
         let options = create_test_accession_options(); // full_quality is true by default here
         let accessions = vec![
-            "SRR123456".to_string(),         // Should succeed
-            "INVALID_ACCESSION".to_string(), // Should fail
-            "SRR999999".to_string(),         // Should succeed
+            "SRR123456".to_string(),
+            "INVALID_ACCESSION".to_string(),
+            "SRR999999".to_string(),
         ];
 
         let results_wrapper = identify_urls(&accessions, &options).await;
@@ -755,7 +753,6 @@ mod tests {
     }
 
     // prefetch tests
-
     #[test]
     fn prefetch_fails_with_empty_accessions() {
         let input = MultiInputOptions {
