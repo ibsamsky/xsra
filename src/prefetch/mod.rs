@@ -804,7 +804,10 @@ mod tests {
         let result = prefetch(&input, None);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Identified the Aws-URL, but cannot currently proceed"));
+        assert_eq!(
+            err_msg,
+            "Identified the aws-URL, but cannot currently proceed: s3://test-bucket/sra/SRR123456/SRR123456.sra"
+        );
     }
 
     #[test]
