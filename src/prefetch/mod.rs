@@ -1,17 +1,17 @@
-use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::sync::Arc;
+use std::time::Duration;
+
 use anyhow::{bail, Result};
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    sync::Arc,
-    time::Duration,
-};
 use tokio::{sync::Semaphore, time::sleep};
 
 #[cfg(not(test))]
-use reqwest::blocking::Client;
+use reqwest::Client;
+
+use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
@@ -33,20 +33,19 @@ fn is_rate_limited(response: &str) -> bool {
     false
 }
 
-// Note: This version of query_entrez is used in production
 #[cfg(not(test))]
-pub fn query_entrez(accession: &str) -> Result<String> {
+pub async fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
         accession
     );
-    let response = Client::new().get(&query_url).send()?.text()?;
+    let response = Client::new().get(&query_url).send().await?.text().await?;
     Ok(response)
 }
 
 // Note: This version of query_entrez is used in tests
 #[cfg(test)]
-pub fn query_entrez(accession: &str) -> Result<String> {
+pub async fn query_entrez(accession: &str) -> Result<String> {
     match accession {
         // For testing empty or invalid accessions
         "" => Ok("no urls found".to_string()),
@@ -131,7 +130,7 @@ pub fn parse_url_with_fallback(
     None
 }
 
-pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<String> {
+pub async fn identify_url(accession: &str, options: &AccessionOptions) -> Result<String> {
     let mut retry_count = 0;
 
     loop {
@@ -140,7 +139,7 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
             break;
         }
 
-        let entrez_response = query_entrez(accession)?;
+        let entrez_response = query_entrez(accession).await?;
 
         // Check if we're being rate limited
         if is_rate_limited(&entrez_response) {
@@ -150,8 +149,8 @@ pub fn identify_url(accession: &str, options: &AccessionOptions) -> Result<Strin
                 accession, delay, retry_count, options.retry_limit
             );
 
-            // Use std::thread::sleep for synchronous sleep
-            std::thread::sleep(std::time::Duration::from_millis(delay as u64));
+            // Use tokio::time::sleep for asynchronous sleep
+            tokio::time::sleep(Duration::from_millis(delay as u64)).await;
             retry_count += 1;
             continue;
         }
@@ -213,7 +212,7 @@ pub async fn identify_urls(
             eprintln!(">> Identifying URL for accession: {}", accession_clone);
 
             // Execute the request
-            let result = identify_url(&accession_clone, &options_clone);
+            let result = identify_url(&accession_clone, &options_clone).await;
 
             // The permit is automatically released when it goes out of scope
             // Small delay to ensure we don't exceed rate limits when permits are released in bursts
@@ -317,7 +316,7 @@ pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<(
 
     // For a single accession
     if accessions.len() == 1 {
-        let url = identify_url(&accessions[0], &input.options)?;
+        let url = runtime.block_on(identify_url(&accessions[0], &input.options))?;
         let path = match output_dir {
             Some(dir) => format!("{}/{}.sra", dir, &accessions[0]),
             None => format!("{}.sra", &accessions[0]),
@@ -596,8 +595,10 @@ mod tests {
             gcp_project_id: Some("test-project".to_string()),
         };
 
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(identify_url("SRR123456", &options));
+
         // Test with SRR123456 which returns GCP URLs in our mock
-        let result = identify_url("SRR123456", &options);
         assert!(
             result.is_ok(),
             "Failed to identify GCP URL: {:?}",
@@ -619,7 +620,8 @@ mod tests {
             gcp_project_id: None,
         };
 
-        let result = identify_url("SRR123456", &options);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(identify_url("SRR123456", &options));
         assert!(result.is_err());
     }
 
@@ -628,7 +630,8 @@ mod tests {
         let mut options = create_test_accession_options();
         options.retry_limit = 0;
 
-        let result = identify_url("INVALID", &options);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(identify_url("INVALID", &options));
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
