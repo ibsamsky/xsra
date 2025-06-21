@@ -132,7 +132,7 @@ fn launch_threads(
     Ok(stats)
 }
 
-pub fn dump(
+pub async fn dump(
     input: &InputOptions,
     num_threads: u64,
     output_opts: &DumpOutput,
@@ -143,8 +143,7 @@ pub fn dump(
             "Identifying SRA data URL for Accession: {}",
             &input.accession
         );
-        let runtime = tokio::runtime::Runtime::new()?;
-        let url = runtime.block_on(identify_url(&input.accession, &input.options))?;
+        let url = identify_url(&input.accession, &input.options).await?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {

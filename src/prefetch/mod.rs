@@ -270,114 +270,107 @@ async fn download_url_gcp(
     Ok(())
 }
 
-pub fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
+pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
     let accessions = input.accession_set();
 
     if accessions.is_empty() {
         bail!("No accessions provided");
     }
 
-    // Create runtime for async operations
-    let runtime = tokio::runtime::Runtime::new()?;
-
     // For a single accession
     if accessions.len() == 1 {
-        let url = runtime.block_on(identify_url(&accessions[0], &input.options))?;
+        let url = identify_url(&accessions[0], &input.options).await?;
         let path = match output_dir {
             Some(dir) => format!("{}/{}.sra", dir, &accessions[0]),
             None => format!("{}.sra", &accessions[0]),
         };
 
-        return runtime.block_on(async {
-            let pb = ProgressBar::new(0);
+        let pb = ProgressBar::new(0);
 
-            match input.options.provider {
-                Provider::Https => download_url(url, path, pb).await,
-                Provider::Gcp => {
-                    let project_id = match &input.options.gcp_project_id {
-                        Some(id) => id.to_string(),
-                        None => bail!("GCP project ID is required for GCP downloads"),
-                    };
-                    download_url_gcp(url, path, project_id, pb).await
-                }
-                _ => bail!("Unsupported provider: {:?}", input.options.provider),
+        return match input.options.provider {
+            Provider::Https => download_url(url, path, pb).await,
+            Provider::Gcp => {
+                let project_id = match &input.options.gcp_project_id {
+                    Some(id) => id.to_string(),
+                    None => bail!("GCP project ID is required for GCP downloads"),
+                };
+                download_url_gcp(url, path, project_id, pb).await
             }
-        });
+            _ => bail!("Unsupported provider: {:?}", input.options.provider),
+        };
     }
 
     // For multiple accessions
-    runtime.block_on(async {
-        // Step 1: Identify URLs with rate limiting
-        let url_results = identify_urls(accessions, &input.options).await?;
+    // Step 1: Identify URLs with rate limiting
+    let url_results = identify_urls(accessions, &input.options).await?;
 
-        // Step 2: Download files concurrently
-        let mp = MultiProgress::new();
+    // Step 2: Download files concurrently
+    let mp = MultiProgress::new();
 
-        // For HTTPS downloads, we can use FuturesUnordered for full concurrency
-        let mut https_downloads = FuturesUnordered::new();
+    // For HTTPS downloads, we can use FuturesUnordered for full concurrency
+    let mut https_downloads = FuturesUnordered::new();
 
-        // For GCP downloads, we'll use a separate Vec since gsutil has its own concurrency management
-        let mut gcp_downloads = Vec::new();
+    // For GCP downloads, we'll use a separate Vec since gsutil has its own concurrency management
+    let mut gcp_downloads = Vec::new();
 
-        for (accession, url_result) in url_results {
-            match url_result {
-                Ok(url) => {
-                    let path = match output_dir {
-                        Some(dir) => format!("{}/{}.sra", dir, accession),
-                        None => format!("{}.sra", accession),
-                    };
+    for (accession, url_result) in url_results {
+        match url_result {
+            Ok(url) => {
+                let path = match output_dir {
+                    Some(dir) => format!("{}/{}.sra", dir, accession),
+                    None => format!("{}.sra", accession),
+                };
 
-                    let pb = mp.add(ProgressBar::new(0));
-                    pb.set_message(format!("Downloading {}", accession));
+                let pb = mp.add(ProgressBar::new(0));
+                pb.set_message(format!("Downloading {}", accession));
 
-                    match input.options.provider {
-                        Provider::Https => {
-                            https_downloads.push(download_url(url, path, pb));
-                        }
-                        Provider::Gcp => {
-                            let project_id = match &input.options.gcp_project_id {
-                                Some(id) => id.to_string(),
-                                None => {
-                                    eprintln!(
-                                        "Error for accession {}: GCP project ID is required",
-                                        accession
-                                    );
-                                    continue;
-                                }
-                            };
-                            // We'll collect GCP downloads and process them separately
-                            gcp_downloads.push((url, path, project_id, pb));
-                        }
-                        _ => {
-                            eprintln!(
-                                "Error for accession {}: Unsupported provider: {:?}",
-                                accession, input.options.provider
-                            );
-                            continue;
-                        }
+                match input.options.provider {
+                    Provider::Https => {
+                        https_downloads.push(download_url(url, path, pb));
+                    }
+                    Provider::Gcp => {
+                        let project_id = match &input.options.gcp_project_id {
+                            Some(id) => id.to_string(),
+                            None => {
+                                eprintln!(
+                                    "Error for accession {}: GCP project ID is required",
+                                    accession
+                                );
+                                continue;
+                            }
+                        };
+                        // We'll collect GCP downloads and process them separately
+                        gcp_downloads.push((url, path, project_id, pb));
+                    }
+                    _ => {
+                        eprintln!(
+                            "Error for accession {}: Unsupported provider: {:?}",
+                            accession, input.options.provider
+                        );
+                        continue;
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error for accession {}: {}", accession, e);
-                }
+            }
+            Err(e) => {
+                eprintln!("Error for accession {}: {}", accession, e);
             }
         }
+    }
 
-        // Process HTTPS downloads concurrently
-        while let Some(result) = https_downloads.next().await {
-            if let Err(e) = result {
-                eprintln!("Download error: {}", e);
-            }
+    // Process HTTPS downloads concurrently
+    while let Some(result) = https_downloads.next().await {
+        if let Err(e) = result {
+            eprintln!("Download error: {}", e);
         }
+    }
 
-        // Process GCP downloads - since gsutil has its own concurrency management,
-        // we'll run them sequentially to avoid overwhelming the terminal output
-        for (url, path, project_id, pb) in gcp_downloads {
-            if let Err(e) = download_url_gcp(url, path, project_id, pb).await {
-                eprintln!("GCP download error: {}", e);
-            }
+    // Process GCP downloads - since gsutil has its own concurrency management,
+    // we'll run them sequentially to avoid overwhelming the terminal output
+    for (url, path, project_id, pb) in gcp_downloads {
+        if let Err(e) = download_url_gcp(url, path, project_id, pb).await {
+            eprintln!("GCP download error: {}", e);
         }
+    }
 
-        Ok(())
-    })
+    Ok(())
 }
