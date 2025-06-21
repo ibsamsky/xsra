@@ -68,13 +68,14 @@ pub fn describe_inner(accession: &str, skip: usize, limit: usize) -> Result<Desc
     Ok(stats)
 }
 
-pub async fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
+pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
     let accession = if !Path::new(&input.accession).exists() {
         eprintln!(
             "Identifying SRA data URL for Accession: {}",
             &input.accession
         );
-        let url = identify_url(&input.accession, &input.options).await?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let url = runtime.block_on(identify_url(&input.accession, &input.options))?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {

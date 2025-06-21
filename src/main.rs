@@ -18,21 +18,22 @@ use recode::recode;
 pub const BUFFER_SIZE: usize = 1024 * 1024;
 pub const RECORD_CAPACITY: usize = 1024;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
-        cli::Command::Dump(args) => {
-            dump(
-                &args.input,
-                args.runtime.threads(),
-                &args.output,
-                args.filter,
-            )
-            .await
+        cli::Command::Dump(args) => dump(
+            &args.input,
+            args.runtime.threads(),
+            &args.output,
+            args.filter,
+        ),
+        cli::Command::Recode(args) => recode(&args),
+        cli::Command::Describe(args) => describe(&args.input, &args.options),
+        cli::Command::Prefetch(args) => {
+            // Async is overkill for other commands,
+            // only prefetch gets full treatment
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(prefetch(&args.input, args.output.as_deref()))
         }
-        cli::Command::Recode(args) => recode(&args).await,
-        cli::Command::Describe(args) => describe(&args.input, &args.options).await,
-        cli::Command::Prefetch(args) => prefetch(&args.input, args.output.as_deref()).await,
     }
 }

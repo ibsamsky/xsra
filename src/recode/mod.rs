@@ -19,14 +19,15 @@ use crate::utils::get_num_records;
 
 const THREAD_UPDATE_INTERVAL: usize = 1024;
 
-pub async fn recode(args: &RecodeArgs) -> Result<()> {
+pub fn recode(args: &RecodeArgs) -> Result<()> {
     args.validate()?;
     let accession = if !Path::new(&args.input.accession).exists() {
         eprintln!(
             "Identifying SRA data URL for Accession: {}",
             &args.input.accession
         );
-        let url = identify_url(&args.input.accession, &args.input.options).await?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let url = runtime.block_on(identify_url(&args.input.accession, &args.input.options))?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {
