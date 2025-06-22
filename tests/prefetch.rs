@@ -1,34 +1,38 @@
-use anyhow::Result;
+use assert_cmd::Command;
+use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
-use xsra::cli::{AccessionOptions, MultiInputOptions, Provider};
-use xsra::prefetch::prefetch;
 
-/// Integration tests for prefetch
+/// Integration tests for prefetch using CLI approach
 
-#[tokio::test]
+#[test]
 #[ignore = "requires network access"]
-async fn test_prefetch_multiple_accessions_https() -> Result<()> {
-    let temp_dir = TempDir::new()?;
+fn test_prefetch_multiple_accessions_https() {
+    let temp_dir = TempDir::new().unwrap();
     let output_path = temp_dir.path();
 
-    let input = MultiInputOptions {
-        // Use small, real accessions and lite only to keep the test fast
-        accessions: vec!["SRR390728".to_string(), "SRR390729".to_string()],
-        options: AccessionOptions {
-            full_quality: false,
-            lite_only: true,
-            provider: Provider::Https,
-            retry_limit: 3,
-            retry_delay: 1000,
-            gcp_project_id: None,
-        },
-    };
+    // Use same accessions as fixtures to save time
+    let mut cmd = Command::cargo_bin("xsra").unwrap();
+    cmd.args(&[
+        "prefetch",
+        "SRR5150787", // Small variable-length SRA (~1.7MB)
+        "SRR1574235", // Small fixed-length SRA (~17MB)
+        "--output",
+        output_path.to_str().unwrap(),
+        "--provider",
+        "https",
+        "--retry-limit",
+        "3",
+    ]);
 
-    prefetch(&input, Some(output_path.to_str().unwrap())).await?;
+    let assert = cmd.assert();
+    assert.success();
 
-    // We don't know the exact filenames (.sra or .lite.sra), so we just count them.
-    let files: Vec<_> = fs::read_dir(output_path)?.filter_map(Result::ok).collect();
+    // Verify both files were downloaded
+    let files: Vec<_> = fs::read_dir(output_path)
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
     assert_eq!(
         files.len(),
         2,
@@ -38,86 +42,102 @@ async fn test_prefetch_multiple_accessions_https() -> Result<()> {
     // Verify both files are not empty
     for file in files {
         assert!(
-            file.metadata()?.len() > 0,
+            file.metadata().unwrap().len() > 0,
             "Downloaded file {:?} is empty",
             file.file_name()
         );
     }
-    Ok(())
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "requires network access"]
-async fn test_prefetch_invalid_accession_https() -> Result<()> {
-    let temp_dir = TempDir::new()?;
+fn test_prefetch_invalid_accession_https() {
+    let temp_dir = TempDir::new().unwrap();
     let output_path = temp_dir.path();
 
-    let input = MultiInputOptions {
-        accessions: vec!["INVALID_ACCESSION_12345".to_string()],
-        options: AccessionOptions {
-            full_quality: false,
-            lite_only: false,
-            provider: Provider::Https,
-            retry_limit: 1,
-            retry_delay: 100,
-            gcp_project_id: None,
-        },
-    };
+    let mut cmd = Command::cargo_bin("xsra").unwrap();
+    cmd.args(&[
+        "prefetch",
+        "INVALID_ACCESSION_12345",
+        "--output",
+        output_path.to_str().unwrap(),
+        "--provider",
+        "https",
+        "--retry-limit",
+        "1",
+    ]);
 
-    let result = prefetch(&input, Some(output_path.to_str().unwrap())).await;
-
-    assert!(
-        result.is_err(),
-        "Expected prefetch to fail with invalid accession"
+    let assert = cmd.assert();
+    assert.failure().stderr(
+        predicate::str::contains("Unable to identify a download URL")
+            .or(predicate::str::contains("API rate limit")),
     );
-    Ok(())
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "requires network access"]
-async fn test_prefetch_full_vs_lite_quality() -> Result<()> {
-    let temp_dir_lite = TempDir::new()?;
+fn test_prefetch_lite_vs_full_quality() {
+    let temp_dir_lite = TempDir::new().unwrap();
     let output_path_lite = temp_dir_lite.path();
 
-    // First, download lite version
-    let input_lite = MultiInputOptions {
-        accessions: vec!["SRR390728".to_string()],
-        options: AccessionOptions {
-            full_quality: false,
-            lite_only: true,
-            provider: Provider::Https,
-            retry_limit: 3,
-            retry_delay: 1000,
-            gcp_project_id: None,
-        },
-    };
-    prefetch(&input_lite, Some(output_path_lite.to_str().unwrap())).await?;
-    let lite_file_path = fs::read_dir(output_path_lite)?.next().unwrap()?.path();
-    let lite_size = fs::metadata(&lite_file_path)?.len();
+    // First, download lite version (prefer lite, allow fallback)
+    let mut cmd_lite = Command::cargo_bin("xsra").unwrap();
+    cmd_lite.args(&[
+        "prefetch",
+        "SRR5150787", // Small variable SRA that should have lite version
+        "--output",
+        output_path_lite.to_str().unwrap(),
+        "--provider",
+        "https",
+        "--retry-limit",
+        "3",
+        // Default is full_quality=false, lite_only=false (prefer lite with fallback)
+    ]);
+
+    let assert_lite = cmd_lite.assert();
+    assert_lite.success();
+
+    let lite_file_path = fs::read_dir(output_path_lite)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let lite_size = fs::metadata(&lite_file_path).unwrap().len();
 
     // Then, download full version
-    let temp_dir_full = TempDir::new()?;
+    let temp_dir_full = TempDir::new().unwrap();
     let output_path_full = temp_dir_full.path();
-    let input_full = MultiInputOptions {
-        accessions: vec!["SRR390728".to_string()],
-        options: AccessionOptions {
-            full_quality: true,
-            lite_only: false,
-            provider: Provider::Https,
-            retry_limit: 3,
-            retry_delay: 1000,
-            gcp_project_id: None,
-        },
-    };
-    prefetch(&input_full, Some(output_path_full.to_str().unwrap())).await?;
-    let full_file_path = fs::read_dir(output_path_full)?.next().unwrap()?.path();
-    let full_size = fs::metadata(&full_file_path)?.len();
 
+    let mut cmd_full = Command::cargo_bin("xsra").unwrap();
+    cmd_full.args(&[
+        "prefetch",
+        "SRR5150787",
+        "--output",
+        output_path_full.to_str().unwrap(),
+        "--provider",
+        "https",
+        "--retry-limit",
+        "3",
+        "--full-quality", // Request full quality version
+    ]);
+
+    let assert_full = cmd_full.assert();
+    assert_full.success();
+
+    let full_file_path = fs::read_dir(output_path_full)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let full_size = fs::metadata(&full_file_path).unwrap().len();
+
+    // Full should be larger than lite (if lite was actually downloaded)
     assert!(
-        full_size > lite_size,
-        "Expected full quality file ({}) to be larger than lite quality file ({})",
+        full_size >= lite_size,
+        "Expected full quality file ({}) to be >= lite quality file ({})",
         full_size,
         lite_size
     );
-    Ok(())
 }

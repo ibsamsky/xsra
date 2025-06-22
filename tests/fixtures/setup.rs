@@ -9,9 +9,9 @@ static INIT: Once = Once::new();
 
 /// Test fixture files
 pub struct TestFixtures {
-    pub base_dir: String,
     pub data_dir: String,
-    pub valid_sra: String,
+    pub small_variable_sra: String, // Small SRA with variable-length segments (for fast VBINSEQ testing)
+    pub small_fixed_sra: String, // Small SRA with fixed-length segments (for fast BINSEQ testing)
     pub corrupt_sra: String,
     pub invalid_sra: String,
 }
@@ -21,9 +21,9 @@ impl TestFixtures {
         let base_dir = "tests/fixtures".to_string();
         let data_dir = format!("{}/data", base_dir);
         Self {
-            base_dir,
             data_dir: data_dir.clone(),
-            valid_sra: format!("{}/valid.sra", data_dir),
+            small_variable_sra: format!("{}/small-variable.sra", data_dir), // SRR5150787 (~1.7MB, variable)
+            small_fixed_sra: format!("{}/small-fixed.sra", data_dir), // SRR1574235 (~17MB, fixed)
             corrupt_sra: format!("{}/corrupt.sra", data_dir),
             invalid_sra: format!("{}/invalid.sra", data_dir),
         }
@@ -53,10 +53,16 @@ impl TestFixtures {
         // Create fixtures data directory if it doesn't exist
         fs::create_dir_all(&self.data_dir)?;
 
-        // Download valid SRA file if it doesn't exist
-        if !Path::new(&self.valid_sra).exists() {
-            println!("📥 Downloading valid SRA file fixture...");
-            self.download_valid_sra()?;
+        // Download small variable-length SRA file if it doesn't exist
+        if !Path::new(&self.small_variable_sra).exists() {
+            println!("📥 Downloading small variable-length SRA file fixture...");
+            self.download_small_variable_sra()?;
+        }
+
+        // Download small fixed-length SRA file if it doesn't exist
+        if !Path::new(&self.small_fixed_sra).exists() {
+            println!("📥 Downloading small fixed-length SRA file fixture...");
+            self.download_small_fixed_sra()?;
         }
 
         // Create corrupt SRA file if it doesn't exist
@@ -75,16 +81,16 @@ impl TestFixtures {
         Ok(())
     }
 
-    /// Download a small, valid SRA file for testing
-    fn download_valid_sra(&self) -> Result<()> {
+    /// Download a small SRA file with variable-length segments for fast VBINSEQ testing
+    fn download_small_variable_sra(&self) -> Result<()> {
         // Use tokio runtime to handle async prefetch call
         let rt = tokio::runtime::Runtime::new()?;
 
         let input = MultiInputOptions {
-            accessions: vec!["SRR390728".to_string()], // Small test dataset (~76MB)
+            accessions: vec!["SRR5150787".to_string()], // Very small test dataset (~1.7MB)
             options: AccessionOptions {
-                full_quality: false, // Use lite version
-                lite_only: true,
+                full_quality: false, // Prefer lite version
+                lite_only: false,    // Allow fallback to full if lite not available
                 provider: Provider::Https,
                 retry_limit: 3,
                 retry_delay: 1000,
@@ -95,29 +101,73 @@ impl TestFixtures {
         // Download to fixtures data directory
         rt.block_on(prefetch(&input, Some(&self.data_dir)))?;
 
-        // Find the downloaded file and rename it to valid.sra
+        // Find the downloaded file and rename it to small-variable.sra
         for entry in fs::read_dir(&self.data_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "sra") {
-                fs::rename(&path, &self.valid_sra)?;
+            if path.file_name().map_or(false, |name| {
+                name.to_string_lossy().starts_with("SRR5150787")
+            }) {
+                fs::rename(&path, &self.small_variable_sra)?;
                 break;
             }
         }
 
-        println!("Downloaded valid SRA fixture: {}", self.valid_sra);
+        println!(
+            "Downloaded small variable-length SRA fixture: {}",
+            self.small_variable_sra
+        );
+        Ok(())
+    }
+
+    /// Download a small SRA file with fixed-length segments for fast BINSEQ testing
+    fn download_small_fixed_sra(&self) -> Result<()> {
+        // Use tokio runtime to handle async prefetch call
+        let rt = tokio::runtime::Runtime::new()?;
+
+        let input = MultiInputOptions {
+            accessions: vec!["SRR1574235".to_string()], // Small ChIP-seq dataset with fixed-length reads (~17MB)
+            options: AccessionOptions {
+                full_quality: false, // Prefer lite version
+                lite_only: false,    // Allow fallback to full if lite not available
+                provider: Provider::Https,
+                retry_limit: 3,
+                retry_delay: 1000,
+                gcp_project_id: None,
+            },
+        };
+
+        // Download to fixtures data directory
+        rt.block_on(prefetch(&input, Some(&self.data_dir)))?;
+
+        // Find the downloaded file and rename it to small-fixed.sra
+        for entry in fs::read_dir(&self.data_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.file_name().map_or(false, |name| {
+                name.to_string_lossy().starts_with("SRR1574235")
+            }) {
+                fs::rename(&path, &self.small_fixed_sra)?;
+                break;
+            }
+        }
+
+        println!(
+            "Downloaded small fixed-length SRA fixture: {}",
+            self.small_fixed_sra
+        );
         Ok(())
     }
 
     /// Create a corrupt SRA file by truncating a valid one
     fn create_corrupt_sra(&self) -> Result<()> {
-        // First ensure we have a valid SRA file
-        if !Path::new(&self.valid_sra).exists() {
-            self.download_valid_sra()?;
+        // First ensure we have a large variable SRA file
+        if !Path::new(&self.small_variable_sra).exists() {
+            self.download_small_variable_sra()?;
         }
 
-        // Read the valid file and truncate it to create corruption
-        let valid_data = fs::read(&self.valid_sra)?;
+        // Read the large variable file and truncate it to create corruption
+        let valid_data = fs::read(&self.small_variable_sra)?;
         let corrupt_size = valid_data.len() / 2; // Truncate to half size
 
         // Write the truncated (corrupt) version

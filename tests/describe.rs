@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::fs;
 use xsra::describe::describe_inner;
 
 mod fixtures;
@@ -12,7 +11,7 @@ fn test_describe_with_valid_sra_fixture() -> Result<()> {
     let fixtures = TestFixtures::ensure_fixtures()?;
 
     // Test describe with valid SRA file
-    let stats = describe_inner(&fixtures.valid_sra, 0, 100)?;
+    let stats = describe_inner(&fixtures.small_variable_sra, 0, 100)?;
 
     // Verify we got meaningful results using available methods
     let segment_lengths = stats.segment_lengths();
@@ -24,10 +23,6 @@ fn test_describe_with_valid_sra_fixture() -> Result<()> {
         segment_lengths.iter().any(|&len| len > 0.0),
         "No meaningful segment lengths found"
     );
-
-    println!("✅ Describe with valid SRA:");
-    println!("  Segments found: {}", segment_lengths.len());
-    println!("  Segment lengths: {:?}", segment_lengths);
 
     // Test that we can serialize the stats (exercises the pprint functionality)
     let mut output = Vec::new();
