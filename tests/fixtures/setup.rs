@@ -77,6 +77,9 @@ impl TestFixtures {
 
     /// Download a small, valid SRA file for testing
     fn download_valid_sra(&self) -> Result<()> {
+        // Use tokio runtime to handle async prefetch call
+        let rt = tokio::runtime::Runtime::new()?;
+
         let input = MultiInputOptions {
             accessions: vec!["SRR390728".to_string()], // Small test dataset (~76MB)
             options: AccessionOptions {
@@ -90,7 +93,7 @@ impl TestFixtures {
         };
 
         // Download to fixtures data directory
-        prefetch(&input, Some(&self.data_dir))?;
+        rt.block_on(prefetch(&input, Some(&self.data_dir)))?;
 
         // Find the downloaded file and rename it to valid.sra
         for entry in fs::read_dir(&self.data_dir)? {

@@ -6,9 +6,9 @@ use xsra::prefetch::prefetch;
 
 /// Integration tests for prefetch
 
-#[test]
+#[tokio::test]
 #[ignore = "requires network access"]
-fn test_prefetch_multiple_accessions_https() -> Result<()> {
+async fn test_prefetch_multiple_accessions_https() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let output_path = temp_dir.path();
 
@@ -25,7 +25,7 @@ fn test_prefetch_multiple_accessions_https() -> Result<()> {
         },
     };
 
-    prefetch(&input, Some(output_path.to_str().unwrap()))?;
+    prefetch(&input, Some(output_path.to_str().unwrap())).await?;
 
     // We don't know the exact filenames (.sra or .lite.sra), so we just count them.
     let files: Vec<_> = fs::read_dir(output_path)?.filter_map(Result::ok).collect();
@@ -46,9 +46,9 @@ fn test_prefetch_multiple_accessions_https() -> Result<()> {
     Ok(())
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires network access"]
-fn test_prefetch_invalid_accession_https() -> Result<()> {
+async fn test_prefetch_invalid_accession_https() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let output_path = temp_dir.path();
 
@@ -64,7 +64,7 @@ fn test_prefetch_invalid_accession_https() -> Result<()> {
         },
     };
 
-    let result = prefetch(&input, Some(output_path.to_str().unwrap()));
+    let result = prefetch(&input, Some(output_path.to_str().unwrap())).await;
 
     assert!(
         result.is_err(),
@@ -73,9 +73,9 @@ fn test_prefetch_invalid_accession_https() -> Result<()> {
     Ok(())
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "requires network access"]
-fn test_prefetch_full_vs_lite_quality() -> Result<()> {
+async fn test_prefetch_full_vs_lite_quality() -> Result<()> {
     let temp_dir_lite = TempDir::new()?;
     let output_path_lite = temp_dir_lite.path();
 
@@ -91,7 +91,7 @@ fn test_prefetch_full_vs_lite_quality() -> Result<()> {
             gcp_project_id: None,
         },
     };
-    prefetch(&input_lite, Some(output_path_lite.to_str().unwrap()))?;
+    prefetch(&input_lite, Some(output_path_lite.to_str().unwrap())).await?;
     let lite_file_path = fs::read_dir(output_path_lite)?.next().unwrap()?.path();
     let lite_size = fs::metadata(&lite_file_path)?.len();
 
@@ -109,7 +109,7 @@ fn test_prefetch_full_vs_lite_quality() -> Result<()> {
             gcp_project_id: None,
         },
     };
-    prefetch(&input_full, Some(output_path_full.to_str().unwrap()))?;
+    prefetch(&input_full, Some(output_path_full.to_str().unwrap())).await?;
     let full_file_path = fs::read_dir(output_path_full)?.next().unwrap()?.path();
     let full_size = fs::metadata(&full_file_path)?.len();
 

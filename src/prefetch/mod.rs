@@ -11,7 +11,7 @@ use std::{
 use tokio::{sync::Semaphore, time::sleep};
 
 #[cfg(not(test))]
-use reqwest::blocking::Client;
+use reqwest::Client;
 
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
@@ -33,6 +33,7 @@ fn is_rate_limited(response: &str) -> bool {
     false
 }
 
+#[cfg(not(test))]
 pub async fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
@@ -42,9 +43,8 @@ pub async fn query_entrez(accession: &str) -> Result<String> {
     Ok(response)
 }
 
-// Note: This version of query_entrez is used in tests
 #[cfg(test)]
-pub fn query_entrez(accession: &str) -> Result<String> {
+pub async fn query_entrez(accession: &str) -> Result<String> {
     match accession {
         // For testing empty or invalid accessions
         "" => Ok("no urls found".to_string()),
@@ -576,8 +576,8 @@ mod tests {
     }
 
     // identify_url tests
-    #[test]
-    fn identify_url_succeeds_with_proper_provider() {
+    #[tokio::test]
+    async fn identify_url_succeeds_with_proper_provider() {
         let options = AccessionOptions {
             full_quality: true,
             lite_only: false,
@@ -588,7 +588,7 @@ mod tests {
         };
 
         // Test with SRR123456 which returns GCP URLs in our mock
-        let result = identify_url("SRR123456", &options);
+        let result = identify_url("SRR123456", &options).await;
         assert!(
             result.is_ok(),
             "Failed to identify GCP URL: {:?}",
@@ -599,8 +599,8 @@ mod tests {
         assert_eq!(url, "gs://test-bucket/sra/SRR123456/SRR123456.sra");
     }
 
-    #[test]
-    fn identify_url_fails_with_unsupported_provider() {
+    #[tokio::test]
+    async fn identify_url_fails_with_unsupported_provider() {
         let options = AccessionOptions {
             full_quality: true,
             lite_only: false,
@@ -610,16 +610,16 @@ mod tests {
             gcp_project_id: None,
         };
 
-        let result = identify_url("SRR123456", &options);
+        let result = identify_url("SRR123456", &options).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn identify_url_fails_with_zero_retries() {
+    #[tokio::test]
+    async fn identify_url_fails_with_zero_retries() {
         let mut options = create_test_accession_options();
         options.retry_limit = 0;
 
-        let result = identify_url("INVALID", &options);
+        let result = identify_url("INVALID", &options).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -753,8 +753,8 @@ mod tests {
     }
 
     // prefetch tests
-    #[test]
-    fn prefetch_fails_with_empty_accessions() {
+    #[tokio::test]
+    async fn prefetch_fails_with_empty_accessions() {
         let input = MultiInputOptions {
             accessions: vec![],
             options: AccessionOptions {
@@ -767,7 +767,7 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -775,8 +775,8 @@ mod tests {
             .contains("No accessions provided"));
     }
 
-    #[test]
-    fn prefetch_fails_with_unsupported_aws_provider() {
+    #[tokio::test]
+    async fn prefetch_fails_with_unsupported_aws_provider() {
         let input = MultiInputOptions {
             accessions: vec!["SRR123456".to_string()],
             options: AccessionOptions {
@@ -789,7 +789,7 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert_eq!(
@@ -798,8 +798,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prefetch_fails_with_gcp_provider_missing_project_id() {
+    #[tokio::test]
+    async fn prefetch_fails_with_gcp_provider_missing_project_id() {
         let input = MultiInputOptions {
             accessions: vec!["SRR123456".to_string()],
             options: AccessionOptions {
@@ -812,7 +812,7 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("GCP project ID is required for GCP downloads"));
