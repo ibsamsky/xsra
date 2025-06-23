@@ -26,7 +26,8 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
             "Identifying SRA data URL for Accession: {}",
             &args.input.accession
         );
-        let url = identify_url(&args.input.accession, &args.input.options)?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let url = runtime.block_on(identify_url(&args.input.accession, &args.input.options))?;
         eprintln!("Streaming SRA records from URL: {}", url);
         url
     } else {

@@ -29,6 +29,12 @@ fn main() -> Result<()> {
         ),
         cli::Command::Recode(args) => recode(&args),
         cli::Command::Describe(args) => describe(&args.input, &args.options),
-        cli::Command::Prefetch(args) => prefetch(&args.input, args.output.as_deref()),
+        cli::Command::Prefetch(args) => {
+            // Only prefetch is fully async. Other commands
+            // may use a runtime for fetching an SRA, but are
+            // otherwise synchronous
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(prefetch(&args.input, args.output.as_deref()))
+        }
     }
 }
