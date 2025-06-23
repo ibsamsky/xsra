@@ -772,7 +772,8 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(prefetch(&input, None));
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -794,7 +795,8 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(prefetch(&input, None));
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert_eq!(
@@ -817,7 +819,8 @@ mod tests {
             },
         };
 
-        let result = prefetch(&input, None);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(prefetch(&input, None));
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("GCP project ID is required for GCP downloads"));
