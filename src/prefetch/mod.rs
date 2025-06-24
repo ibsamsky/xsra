@@ -13,9 +13,6 @@ use tokio::{sync::Semaphore, time::sleep};
 #[cfg(not(test))]
 use reqwest::Client;
 
-#[cfg(not(test))]
-use reqwest::Client;
-
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
 
@@ -216,7 +213,6 @@ pub async fn identify_urls(
 
             // Execute the request
             let result = identify_url(&accession_clone, &options_clone).await;
-            let result = identify_url(&accession_clone, &options_clone).await;
 
             // The permit is automatically released when it goes out of scope
             // Small delay to ensure we don't exceed rate limits when permits are released in bursts
@@ -308,7 +304,6 @@ async fn download_url_gcp(
     Ok(())
 }
 
-pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
 pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Result<()> {
     let accessions = input.accession_set();
 
