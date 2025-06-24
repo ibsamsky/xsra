@@ -1,48 +1,47 @@
-name: Rust
+name: Rust CI
 
-on: push
+# Run this workflow on pull requests targeting main and on pushes to main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Cancel in-progress runs on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  ci:
-    needs: [build]
-    name: CI
-    runs-on: "ubuntu-latest"
-    steps:
-      - name: Done
-        run: exit 0
-
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, macos-14, macos-15]
-
-    runs-on: ${{ matrix.os }}
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.8.0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@vv4
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-      - name: Configure GitHub SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "Host github.com" >> ~/.ssh/config
-          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+      - name: Build project
+        run: cargo build --verbose
 
-      - name: Verify SSH connection
-        run: ssh -T git@github.com || true # Will exit with error code 1 even when successful
-
-      - name: Setup Cargo Config for SSH
-        run: |
-          mkdir -p ~/.cargo
-          printf "[net]\ngit-fetch-with-cli = true\n" > ~/.cargo/config.toml
-
-      - name: Build
-        run: |
-          cargo build --verbose
+      - name: Run all tests (including ignored)
+        run: cargo test --verbose -- --include-ignored
