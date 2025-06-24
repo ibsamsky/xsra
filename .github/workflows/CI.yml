@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo dependencies
-        uses: actions/cache@vv4
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
