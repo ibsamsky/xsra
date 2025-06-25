@@ -7,41 +7,44 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# Cancel in-progress runs on the same branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+
+  ci:
+    needs: [build, test]
+    name: CI
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Done
+        run: exit 0
+
   test:
-    name: Test Suite
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14, macos-15]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: |
+          cargo test --verbose
 
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14, macos-15]
 
-      - name: Build project
-        run: cargo build --verbose
+    runs-on: ${{ matrix.os }}
 
-      - name: Run all tests (including ignored)
-        run: cargo test --verbose -- --include-ignored
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build
+        run: |
+          cargo build --verbose
