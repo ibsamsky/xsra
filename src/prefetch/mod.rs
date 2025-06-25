@@ -76,6 +76,17 @@ pub async fn query_entrez(accession: &str) -> Result<String> {
     }
 }
 
+/// Checks if a line in the response is a URL and passes all the filters
+fn pass_url_filter(line: &str, accession: &str, provider: Provider) -> bool {
+    line.contains("url=")
+        && line.contains(accession)
+        && !line.contains(".fastq")
+        && !line.contains(".vcf")
+        && !line.contains(".bam")
+        && !line.contains(".gz")
+        && line.contains(provider.url_prefix())
+}
+
 pub fn parse_url(
     accession: &str,
     response: &str,
@@ -83,12 +94,7 @@ pub fn parse_url(
     provider: Provider,
 ) -> Option<String> {
     for line in response.replace(" ", "\n").split("\n") {
-        if line.contains("url=")
-            && line.contains(accession)
-            && !line.contains(".fastq")
-            && !line.contains(".gz")
-            && line.contains(provider.url_prefix())
-        {
+        if pass_url_filter(line, accession, provider) {
             if full_quality && line.contains(".lite") {
                 continue;
             }
