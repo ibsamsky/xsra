@@ -1,17 +1,17 @@
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::sync::Arc;
-use std::time::Duration;
-
+use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 use anyhow::{bail, Result};
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{sync::Semaphore, time::sleep};
 
 #[cfg(not(test))]
 use reqwest::Client;
-
-use crate::cli::{AccessionOptions, MultiInputOptions, Provider};
 
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
@@ -583,8 +583,8 @@ mod tests {
     }
 
     // identify_url tests
-    #[test]
-    fn identify_url_succeeds_with_proper_provider() {
+    #[tokio::test]
+    async fn identify_url_succeeds_with_proper_provider() {
         let options = AccessionOptions {
             full_quality: true,
             lite_only: false,
@@ -594,10 +594,8 @@ mod tests {
             gcp_project_id: Some("test-project".to_string()),
         };
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(identify_url("SRR123456", &options));
-
         // Test with SRR123456 which returns GCP URLs in our mock
+        let result = identify_url("SRR123456", &options).await;
         assert!(
             result.is_ok(),
             "Failed to identify GCP URL: {:?}",
@@ -608,8 +606,8 @@ mod tests {
         assert_eq!(url, "gs://test-bucket/sra/SRR123456/SRR123456.sra");
     }
 
-    #[test]
-    fn identify_url_fails_with_unsupported_provider() {
+    #[tokio::test]
+    async fn identify_url_fails_with_unsupported_provider() {
         let options = AccessionOptions {
             full_quality: true,
             lite_only: false,
@@ -619,18 +617,16 @@ mod tests {
             gcp_project_id: None,
         };
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(identify_url("SRR123456", &options));
+        let result = identify_url("SRR123456", &options).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn identify_url_fails_with_zero_retries() {
+    #[tokio::test]
+    async fn identify_url_fails_with_zero_retries() {
         let mut options = create_test_accession_options();
         options.retry_limit = 0;
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(identify_url("INVALID", &options));
+        let result = identify_url("INVALID", &options).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -764,8 +760,8 @@ mod tests {
     }
 
     // prefetch tests
-    #[test]
-    fn prefetch_fails_with_empty_accessions() {
+    #[tokio::test]
+    async fn prefetch_fails_with_empty_accessions() {
         let input = MultiInputOptions {
             accessions: vec![],
             options: AccessionOptions {
@@ -778,8 +774,7 @@ mod tests {
             },
         };
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(prefetch(&input, None));
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -787,8 +782,8 @@ mod tests {
             .contains("No accessions provided"));
     }
 
-    #[test]
-    fn prefetch_fails_with_unsupported_aws_provider() {
+    #[tokio::test]
+    async fn prefetch_fails_with_unsupported_aws_provider() {
         let input = MultiInputOptions {
             accessions: vec!["SRR123456".to_string()],
             options: AccessionOptions {
@@ -801,8 +796,7 @@ mod tests {
             },
         };
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(prefetch(&input, None));
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert_eq!(
@@ -811,8 +805,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prefetch_fails_with_gcp_provider_missing_project_id() {
+    #[tokio::test]
+    async fn prefetch_fails_with_gcp_provider_missing_project_id() {
         let input = MultiInputOptions {
             accessions: vec!["SRR123456".to_string()],
             options: AccessionOptions {
@@ -825,8 +819,7 @@ mod tests {
             },
         };
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(prefetch(&input, None));
+        let result = prefetch(&input, None).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("GCP project ID is required for GCP downloads"));

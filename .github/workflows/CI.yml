@@ -1,11 +1,17 @@
-name: Rust
+name: Rust CI
 
-on: push
+# Run this workflow on pull requests targeting main and on pushes to main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+
   ci:
     needs: [build, test]
     name: CI
@@ -22,7 +28,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Build
         run: |
