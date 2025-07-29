@@ -86,6 +86,9 @@ xsra describe <ACCESSION>.sra
 
 # Download an accession to disk
 xsra prefetch <ACCESSION>.sra
+
+# Download multiple accessions to disk
+xsra prefetch <ACCESSION>.sra <ACCESSION2>.sra <ACCESSION3>.sra
 ```
 
 You can also write [BINSEQ](https://github.com/arcinstitute/binseq) and [VBINSEQ](https://github.com/arcinstitute/vbinseq) files directly from SRA without an intermediate FASTA or FASTQ file.
