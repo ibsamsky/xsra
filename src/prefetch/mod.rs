@@ -5,13 +5,13 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
     fs::File,
     io::{BufWriter, Write},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 use tokio::{sync::Semaphore, time::sleep};
 
-#[cfg(not(test))]
-use reqwest::Client;
+/// Shared reqwest client for all requests
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 /// Semaphore for rate limiting (NCBI limits to 3 requests per second)
 pub const RATE_LIMIT_SEMAPHORE: usize = 3;
@@ -39,7 +39,7 @@ pub async fn query_entrez(accession: &str) -> Result<String> {
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
         accession
     );
-    let response = Client::new().get(&query_url).send().await?.text().await?;
+    let response = CLIENT.get(&query_url).send().await?.text().await?;
     Ok(response)
 }
 
@@ -248,11 +248,7 @@ pub async fn identify_urls(
 /// Download a file from a URL asynchronously
 async fn download_url(url: String, path: String, pb: ProgressBar) -> Result<()> {
     let filename = url.split('/').next_back().unwrap_or("");
-    let client = reqwest::Client::new()
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?;
+    let client = CLIENT.get(&url).send().await?.error_for_status()?;
 
     let size = client.content_length().unwrap_or(0);
     pb.set_style(ProgressStyle::default_bar()
