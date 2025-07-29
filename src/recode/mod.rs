@@ -28,7 +28,7 @@ pub fn recode(args: &RecodeArgs) -> Result<()> {
         );
         let runtime = tokio::runtime::Runtime::new()?;
         let url = runtime.block_on(identify_url(&args.input.accession, &args.input.options))?;
-        eprintln!("Streaming SRA records from URL: {}", url);
+        eprintln!("Streaming SRA records from URL: {url}");
         url
     } else {
         args.input.accession.to_string()
@@ -127,7 +127,7 @@ fn recode_to_binseq(
                 }
 
                 // Process records at a constant interval
-                if iter_index % THREAD_UPDATE_INTERVAL == 0 {
+                if iter_index.is_multiple_of(THREAD_UPDATE_INTERVAL) {
                     {
                         let mut global = g_writer.lock();
                         global.ingest(&mut t_writer)?;
@@ -218,7 +218,7 @@ fn recode_to_vbinseq(
                 }
 
                 // Process records at a constant interval
-                if iter_index % THREAD_UPDATE_INTERVAL == 0 {
+                if iter_index.is_multiple_of(THREAD_UPDATE_INTERVAL) {
                     {
                         let mut global = g_writer.lock();
                         global.ingest(&mut t_writer)?;

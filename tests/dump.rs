@@ -58,7 +58,7 @@ fn test_split_file_dump() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let input = InputOptions {
-        accession: fixtures.small_variable_sra.clone(),
+        accession: fixtures.small_variable_sra.to_string_lossy().to_string(),
         options: default_accession_options(),
     };
 
@@ -97,7 +97,7 @@ fn test_split_file_dump() -> Result<()> {
 
             // Verify file is not empty
             let file_size = fs::metadata(entry.path())?.len();
-            assert!(file_size > 0, "Split file {} is empty", file_name);
+            assert!(file_size > 0, "Split file {file_name} is empty");
         }
     }
 
@@ -133,7 +133,7 @@ fn test_empty_file_removal() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let input = InputOptions {
-        accession: fixtures.small_variable_sra.clone(),
+        accession: fixtures.small_variable_sra.to_string_lossy().to_string(),
         options: default_accession_options(),
     };
 

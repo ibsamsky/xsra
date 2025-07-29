@@ -102,19 +102,19 @@ impl ProcessStatistics {
         if sum_slice(&self.reads_per_segment) > 0 {
             writeln!(wtr, "Reads written per segment:")?;
             for (i, &count) in self.reads_per_segment.iter().enumerate() {
-                writeln!(wtr, "  Segment {}: {}", i, count)?;
+                writeln!(wtr, "  Segment {i}: {count}")?;
             }
         }
         if sum_slice(&self.filter_size) > 0 {
             writeln!(wtr, "Filtered reads by size:")?;
             for (i, &count) in self.filter_size.iter().enumerate() {
-                writeln!(wtr, "  Segment {}: {}", i, count)?;
+                writeln!(wtr, "  Segment {i}: {count}")?;
             }
         }
         if sum_slice(&self.filter_type) > 0 {
             writeln!(wtr, "Filtered reads by type:")?;
             for (i, &count) in self.filter_type.iter().enumerate() {
-                writeln!(wtr, "  Segment {}: {}", i, count)?;
+                writeln!(wtr, "  Segment {i}: {count}")?;
             }
         }
         Ok(())

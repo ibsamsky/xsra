@@ -36,8 +36,7 @@ fn is_rate_limited(response: &str) -> bool {
 #[cfg(not(test))]
 pub async fn query_entrez(accession: &str) -> Result<String> {
     let query_url = format!(
-        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={}&rettype=full",
-        accession
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=sra&id={accession}&rettype=full"
     );
     let response = CLIENT.get(&query_url).send().await?.text().await?;
     Ok(response)
@@ -124,8 +123,7 @@ pub fn parse_url_with_fallback(
     if !lite_only {
         if let Some(url) = parse_url(accession, response, true, provider) {
             eprintln!(
-                "Warning: Lite quality not available for {}, falling back to full quality",
-                accession
+                "Warning: Lite quality not available for {accession}, falling back to full quality"
             );
             return Some(url);
         }
@@ -197,7 +195,7 @@ pub async fn identify_urls(
     options: &AccessionOptions,
 ) -> Result<Vec<(String, Result<String>)>> {
     let total = accessions.len();
-    eprintln!("Identifying URLs for {} accessions...", total);
+    eprintln!("Identifying URLs for {total} accessions...");
 
     // Use a semaphore to limit concurrent requests to 3
     let semaphore = Arc::new(Semaphore::new(RATE_LIMIT_SEMAPHORE));
@@ -215,7 +213,7 @@ pub async fn identify_urls(
                 .acquire()
                 .await
                 .expect("Semaphore should not be closed");
-            eprintln!(">> Identifying URL for accession: {}", accession_clone);
+            eprintln!(">> Identifying URL for accession: {accession_clone}");
 
             // Execute the request
             let result = identify_url(&accession_clone, &options_clone).await;
@@ -238,7 +236,7 @@ pub async fn identify_urls(
     for result in results {
         match result {
             Ok(res) => processed_results.push(res),
-            Err(e) => eprintln!("Task join error: {}", e),
+            Err(e) => eprintln!("Task join error: {e}"),
         }
     }
 
@@ -278,7 +276,7 @@ async fn download_url_gcp(
     pb: ProgressBar,
 ) -> Result<()> {
     let filename = url.split('/').next_back().unwrap_or("");
-    pb.set_message(format!("GCP: {}", filename));
+    pb.set_message(format!("GCP: {filename}"));
 
     // Set indeterminate progress style - we'll let gsutil show its own progress
     pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
@@ -298,11 +296,11 @@ async fn download_url_gcp(
     let status = cmd.spawn()?.wait()?;
 
     if !status.success() {
-        pb.finish_with_message(format!("Failed to download {}", filename));
+        pb.finish_with_message(format!("Failed to download {filename}"));
         bail!("gsutil command failed with exit code: {}", status);
     }
 
-    pb.finish_with_message(format!("Downloaded {} successfully", filename));
+    pb.finish_with_message(format!("Downloaded {filename} successfully"));
     Ok(())
 }
 
@@ -353,12 +351,12 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
         match url_result {
             Ok(url) => {
                 let path = match output_dir {
-                    Some(dir) => format!("{}/{}.sra", dir, accession),
-                    None => format!("{}.sra", accession),
+                    Some(dir) => format!("{dir}/{accession}.sra"),
+                    None => format!("{accession}.sra"),
                 };
 
                 let pb = mp.add(ProgressBar::new(0));
-                pb.set_message(format!("Downloading {}", accession));
+                pb.set_message(format!("Downloading {accession}"));
 
                 match input.options.provider {
                     Provider::Https => {
@@ -369,8 +367,7 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
                             Some(id) => id.to_string(),
                             None => {
                                 eprintln!(
-                                    "Error for accession {}: GCP project ID is required",
-                                    accession
+                                    "Error for accession {accession}: GCP project ID is required"
                                 );
                                 continue;
                             }
@@ -388,7 +385,7 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
                 }
             }
             Err(e) => {
-                eprintln!("Error for accession {}: {}", accession, e);
+                eprintln!("Error for accession {accession}: {e}");
             }
         }
     }
@@ -396,7 +393,7 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
     // Process HTTPS downloads concurrently
     while let Some(result) = https_downloads.next().await {
         if let Err(e) = result {
-            eprintln!("Download error: {}", e);
+            eprintln!("Download error: {e}");
         }
     }
 
@@ -404,7 +401,7 @@ pub async fn prefetch(input: &MultiInputOptions, output_dir: Option<&str>) -> Re
     // we'll run them sequentially to avoid overwhelming the terminal output
     for (url, path, project_id, pb) in gcp_downloads {
         if let Err(e) = download_url_gcp(url, path, project_id, pb).await {
-            eprintln!("GCP download error: {}", e);
+            eprintln!("GCP download error: {e}");
         }
     }
 
@@ -655,12 +652,7 @@ mod tests {
         let actual_results: Vec<(String, String)> = actual_results_vec
             .iter()
             .map(|(acc, res)| {
-                assert!(
-                    res.is_ok(),
-                    "Expected Ok for accession {}, got {:?}",
-                    acc,
-                    res
-                );
+                assert!(res.is_ok(), "Expected Ok for accession {acc}, got {res:?}");
                 (acc.clone(), res.as_ref().unwrap().clone())
             })
             .collect();

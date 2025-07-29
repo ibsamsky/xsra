@@ -99,7 +99,7 @@ fn launch_threads(
                 }
 
                 // Handle buffer writes at specific intervals
-                if idx > 0 && (idx % RECORD_CAPACITY == 0) {
+                if idx > 0 && idx.is_multiple_of(RECORD_CAPACITY) {
                     shared_writer
                         .lock()
                         .write_all_buffers(&mut local_buffers, &mut counts)?;
@@ -145,7 +145,7 @@ pub fn dump(
         );
         let runtime = tokio::runtime::Runtime::new()?;
         let url = runtime.block_on(identify_url(&input.accession, &input.options))?;
-        eprintln!("Streaming SRA records from URL: {}", url);
+        eprintln!("Streaming SRA records from URL: {url}");
         url
     } else {
         input.accession.to_string()
@@ -156,8 +156,7 @@ pub fn dump(
     // Adjust the number of records to process if a limit is provided
     let num_records = if let Some(limit) = filter_opts.limit {
         if limit > num_records {
-            eprintln!("Warning: Provided spot limit ({}) is greater than the actual number of spots ({}). Will process the full archive.",
-                limit, num_records);
+            eprintln!("Warning: Provided spot limit ({limit}) is greater than the actual number of spots ({num_records}). Will process the full archive.");
         }
         num_records.min(limit)
     } else {
@@ -218,9 +217,9 @@ pub fn dump(
                         seg_id,
                     );
                     if output_opts.keep_empty {
-                        eprintln!("Warning => empty path: {}", path);
+                        eprintln!("Warning => empty path: {path}");
                     } else {
-                        eprintln!("Removing empty path: {}", path);
+                        eprintln!("Removing empty path: {path}");
                         std::fs::remove_file(path)?;
                     }
                 }

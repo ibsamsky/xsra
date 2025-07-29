@@ -85,7 +85,7 @@ impl RecodeOutput {
             name.clone()
         } else {
             let ext = self.flavor.extension();
-            format!("output.{}", ext)
+            format!("output.{ext}")
         }
     }
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
 use xsra::cli::{AccessionOptions, MultiInputOptions, Provider};
 use xsra::prefetch::prefetch;
@@ -9,23 +9,23 @@ static INIT: Once = Once::new();
 
 /// Test fixture files
 pub struct TestFixtures {
-    pub data_dir: String,
-    pub small_variable_sra: String, // Small SRA with variable-length segments (for fast VBINSEQ testing)
-    pub small_fixed_sra: String, // Small SRA with fixed-length segments (for fast BINSEQ testing)
-    pub corrupt_sra: String,
-    pub invalid_sra: String,
+    pub data_dir: PathBuf,
+    pub small_variable_sra: PathBuf, // Small SRA with variable-length segments (for fast VBINSEQ testing)
+    pub small_fixed_sra: PathBuf, // Small SRA with fixed-length segments (for fast BINSEQ testing)
+    pub corrupt_sra: PathBuf,
+    pub invalid_sra: PathBuf,
 }
 
 impl TestFixtures {
     pub fn new() -> Self {
-        let base_dir = "tests/fixtures".to_string();
-        let data_dir = format!("{}/data", base_dir);
+        let base_dir = PathBuf::from("tests/fixtures");
+        let data_dir = base_dir.join("data");
         Self {
-            data_dir: data_dir.clone(),
-            small_variable_sra: format!("{}/small-variable.sra", data_dir), // SRR5150787 (~1.7MB, variable)
-            small_fixed_sra: format!("{}/small-fixed.sra", data_dir), // SRR1574235 (~17MB, fixed)
-            corrupt_sra: format!("{}/corrupt.sra", data_dir),
-            invalid_sra: format!("{}/invalid.sra", data_dir),
+            small_variable_sra: data_dir.join("small-variable.sra"), // SRR5150787 (~1.7MB, variable)
+            small_fixed_sra: data_dir.join("small-fixed.sra"),       // SRR1574235 (~17MB, fixed)
+            corrupt_sra: data_dir.join("corrupt.sra"),
+            invalid_sra: data_dir.join("invalid.sra"),
+            data_dir,
         }
     }
 
@@ -36,11 +36,7 @@ impl TestFixtures {
         let fixtures = TestFixtures::new();
         let mut result = Ok(());
 
-        INIT.call_once(|| {
-            if let Err(e) = fixtures.setup_fixtures() {
-                result = Err(e);
-            }
-        });
+        INIT.call_once(|| result = fixtures.setup_fixtures());
 
         result?;
         Ok(fixtures)
@@ -99,15 +95,16 @@ impl TestFixtures {
         };
 
         // Download to fixtures data directory
-        rt.block_on(prefetch(&input, Some(&self.data_dir)))?;
+        rt.block_on(prefetch(&input, Some(&self.data_dir.to_string_lossy())))?;
 
         // Find the downloaded file and rename it to small-variable.sra
         for entry in fs::read_dir(&self.data_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.file_name().map_or(false, |name| {
-                name.to_string_lossy().starts_with("SRR5150787")
-            }) {
+            if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("SRR5150787"))
+            {
                 fs::rename(&path, &self.small_variable_sra)?;
                 break;
             }
@@ -115,7 +112,7 @@ impl TestFixtures {
 
         println!(
             "Downloaded small variable-length SRA fixture: {}",
-            self.small_variable_sra
+            self.small_variable_sra.display()
         );
         Ok(())
     }
@@ -138,15 +135,16 @@ impl TestFixtures {
         };
 
         // Download to fixtures data directory
-        rt.block_on(prefetch(&input, Some(&self.data_dir)))?;
+        rt.block_on(prefetch(&input, Some(&self.data_dir.to_string_lossy())))?;
 
         // Find the downloaded file and rename it to small-fixed.sra
         for entry in fs::read_dir(&self.data_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.file_name().map_or(false, |name| {
-                name.to_string_lossy().starts_with("SRR1574235")
-            }) {
+            if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("SRR1574235"))
+            {
                 fs::rename(&path, &self.small_fixed_sra)?;
                 break;
             }
@@ -154,7 +152,7 @@ impl TestFixtures {
 
         println!(
             "Downloaded small fixed-length SRA fixture: {}",
-            self.small_fixed_sra
+            self.small_fixed_sra.display()
         );
         Ok(())
     }
@@ -175,7 +173,7 @@ impl TestFixtures {
 
         println!(
             "Created corrupt SRA fixture: {} ({} bytes, truncated from {})",
-            self.corrupt_sra,
+            self.corrupt_sra.display(),
             corrupt_size,
             valid_data.len()
         );
@@ -191,7 +189,10 @@ This is not a valid SRA file.
 
         fs::write(&self.invalid_sra, invalid_content)?;
 
-        println!("Created invalid SRA fixture: {}", self.invalid_sra);
+        println!(
+            "Created invalid SRA fixture: {}",
+            self.invalid_sra.display()
+        );
         Ok(())
     }
 }

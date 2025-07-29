@@ -50,8 +50,7 @@ impl fmt::Display for OutputFileType<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::StdOut => write!(f, "stdout"),
-            Self::RegularFile(fname) => write!(f, "{}", fname),
-            Self::NamedPipe(fname) => write!(f, "{}", fname),
+            Self::RegularFile(fname) | Self::NamedPipe(fname) => f.write_str(fname),
         }
     }
 }
@@ -76,13 +75,12 @@ fn create_fifo_if_absent(path: OutputFileType) -> Result<()> {
                 if cfg!(target_family = "unix") {
                     if minfo.file_type().is_fifo() {
                         eprintln!(
-                            "The path {} already existed as is a fifo, so using that for communication.",
-                            path
+                            "The path {path} already existed as is a fifo, so using that for communication."
                         );
                         true
                     } else {
                         // the file existed but wasn't a fifo
-                        bail!("The file {} existed already, but wasn't a fifo, so it can't be used as a named pipe. Please remove the file or provide a named pipe instead.", path);
+                        bail!("The file {path} existed already, but wasn't a fifo, so it can't be used as a named pipe. Please remove the file or provide a named pipe instead.");
                     }
                 } else {
                     // the file existed but wasn't a fifo
@@ -98,7 +96,7 @@ fn create_fifo_if_absent(path: OutputFileType) -> Result<()> {
                 if cfg!(target_family = "unix") {
                     let status = Command::new("mkfifo").arg(path).status()?;
                     if !status.success() {
-                        bail!("`mkfifo` command failed with exit status {:#?}", status);
+                        bail!("`mkfifo` command failed with exit status {status:#?}");
                     }
                     //create_fifo(path, 0o644)?;
                 } else {

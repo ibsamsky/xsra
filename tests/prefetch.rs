@@ -13,7 +13,7 @@ fn test_prefetch_multiple_accessions_https() {
 
     // Use same accessions as fixtures to save time
     let mut cmd = Command::cargo_bin("xsra").unwrap();
-    cmd.args(&[
+    cmd.args([
         "prefetch",
         "SRR5150787", // Small variable-length SRA (~1.7MB)
         "SRR1574235", // Small fixed-length SRA (~17MB)
@@ -56,7 +56,7 @@ fn test_prefetch_invalid_accession_https() {
     let output_path = temp_dir.path();
 
     let mut cmd = Command::cargo_bin("xsra").unwrap();
-    cmd.args(&[
+    cmd.args([
         "prefetch",
         "INVALID_ACCESSION_12345",
         "--output",
@@ -82,7 +82,7 @@ fn test_prefetch_lite_vs_full_quality() {
 
     // First, download lite version (prefer lite, allow fallback)
     let mut cmd_lite = Command::cargo_bin("xsra").unwrap();
-    cmd_lite.args(&[
+    cmd_lite.args([
         "prefetch",
         "SRR5150787", // Small variable SRA that should have lite version
         "--output",
@@ -110,7 +110,7 @@ fn test_prefetch_lite_vs_full_quality() {
     let output_path_full = temp_dir_full.path();
 
     let mut cmd_full = Command::cargo_bin("xsra").unwrap();
-    cmd_full.args(&[
+    cmd_full.args([
         "prefetch",
         "SRR5150787",
         "--output",
@@ -136,8 +136,6 @@ fn test_prefetch_lite_vs_full_quality() {
     // Full should be larger than lite (if lite was actually downloaded)
     assert!(
         full_size >= lite_size,
-        "Expected full quality file ({}) to be >= lite quality file ({})",
-        full_size,
-        lite_size
+        "Expected full quality file ({full_size}) to be >= lite quality file ({lite_size})"
     );
 }

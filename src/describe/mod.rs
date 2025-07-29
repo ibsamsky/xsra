@@ -76,7 +76,7 @@ pub fn describe(input: &InputOptions, opts: &DescribeOptions) -> Result<()> {
         );
         let runtime = tokio::runtime::Runtime::new()?;
         let url = runtime.block_on(identify_url(&input.accession, &input.options))?;
-        eprintln!("Streaming SRA records from URL: {}", url);
+        eprintln!("Streaming SRA records from URL: {url}");
         url
     } else {
         input.accession.to_string()

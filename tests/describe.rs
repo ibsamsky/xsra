@@ -11,12 +11,12 @@ fn test_describe_with_valid_sra_fixture() -> Result<()> {
     let fixtures = TestFixtures::ensure_fixtures()?;
 
     // Test describe with valid SRA file
-    let stats = describe_inner(&fixtures.small_variable_sra, 0, 100)?;
+    let stats = describe_inner(&fixtures.small_variable_sra.to_string_lossy(), 0, 100)?;
 
     // Verify we got meaningful results using available methods
     let segment_lengths = stats.segment_lengths();
     assert!(
-        segment_lengths.len() > 0,
+        !segment_lengths.is_empty(),
         "No segments found in valid SRA file"
     );
     assert!(
@@ -28,7 +28,7 @@ fn test_describe_with_valid_sra_fixture() -> Result<()> {
     let mut output = Vec::new();
     stats.pprint(&mut output)?;
     assert!(
-        output.len() > 0,
+        !output.is_empty(),
         "Stats serialization produced empty output"
     );
 
@@ -40,7 +40,7 @@ fn test_describe_with_invalid_sra_fixture() -> Result<()> {
     let fixtures = TestFixtures::ensure_fixtures()?;
 
     // Test describe with invalid SRA file - should fail
-    let result = describe_inner(&fixtures.invalid_sra, 0, 10);
+    let result = describe_inner(&fixtures.invalid_sra.to_string_lossy(), 0, 10);
 
     assert!(
         result.is_err(),
@@ -55,7 +55,7 @@ fn test_describe_with_corrupt_sra_fixture() -> Result<()> {
     let fixtures = TestFixtures::ensure_fixtures()?;
 
     // Test describe with corrupt SRA file - should fail
-    let result = describe_inner(&fixtures.corrupt_sra, 0, 10);
+    let result = describe_inner(&fixtures.corrupt_sra.to_string_lossy(), 0, 10);
 
     assert!(
         result.is_err(),
