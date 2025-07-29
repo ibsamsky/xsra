@@ -91,7 +91,7 @@ xsra prefetch <ACCESSION>.sra
 xsra prefetch <ACCESSION>.sra <ACCESSION2>.sra <ACCESSION3>.sra
 ```
 
-You can also write [BINSEQ](https://github.com/arcinstitute/binseq) and [VBINSEQ](https://github.com/arcinstitute/vbinseq) files directly from SRA without an intermediate FASTA or FASTQ file.
+You can also write [BINSEQ](https://github.com/arcinstitute/binseq) files (`.bq` / `.vbq`) directly from SRA without an intermediate FASTA or FASTQ file.
 These operations can be done with multiple threads for faster processing as well (following same arguments as above).
 
 ```bash
